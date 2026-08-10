@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, User, KeyRound, ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, User, KeyRound, ArrowRight, ShieldAlert } from 'lucide-react';
 
 export default function AuthModal({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -32,23 +32,8 @@ export default function AuthModal({ onLogin }) {
       status: 'online'
     };
 
-    // Store in session/localStorage for mock persistence
     localStorage.setItem('securechat_user', JSON.stringify(userData));
     onLogin(userData);
-  };
-
-  const handleDemoLogin = () => {
-    const demoUser = {
-      id: 'user_me',
-      name: 'Alex Rivera',
-      username: '@alex_rivera',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
-      bio: '🔒 Protected by SecureChat Guard | Always stay safe online! ✨',
-      phone: '+1 (555) 019-2834',
-      status: 'online'
-    };
-    localStorage.setItem('securechat_user', JSON.stringify(demoUser));
-    onLogin(demoUser);
   };
 
   return (
@@ -153,18 +138,6 @@ export default function AuthModal({ onLogin }) {
             <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
           </button>
         </form>
-
-        {/* Demo Fast Login */}
-        <div className="mt-6 pt-4 border-t border-gray-800/80 text-center">
-          <button
-            type="button"
-            onClick={handleDemoLogin}
-            className="text-xs font-medium text-emerald-400 hover:text-emerald-300 transition flex items-center justify-center gap-1.5 mx-auto"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Quick Demo Login (Alex Rivera)
-          </button>
-        </div>
 
       </div>
     </div>

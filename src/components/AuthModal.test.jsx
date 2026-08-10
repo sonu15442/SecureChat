@@ -19,12 +19,19 @@ describe('AuthModal Component', () => {
     expect(screen.getByText(/Please enter both username and password/i)).toBeInTheDocument();
   });
 
-  it('triggers onLogin when Quick Demo Login is clicked', () => {
+  it('triggers onLogin when form is submitted with valid credentials', () => {
     const handleLogin = vi.fn();
     render(<AuthModal onLogin={handleLogin} />);
-    const demoBtn = screen.getByText(/Quick Demo Login/i);
-    fireEvent.click(demoBtn);
+    
+    const usernameInput = screen.getByPlaceholderText(/alex_rivera/i);
+    const passwordInput = screen.getByPlaceholderText(/••••••••/i);
+    const submitBtn = screen.getByRole('button', { name: /Sign In to SecureChat/i });
+
+    fireEvent.change(usernameInput, { target: { value: 'john_doe' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
     expect(handleLogin).toHaveBeenCalledTimes(1);
-    expect(handleLogin.mock.calls[0][0].name).toBe('Alex Rivera');
+    expect(handleLogin.mock.calls[0][0].username).toBe('@john_doe');
   });
 });

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import LinkRiskModal from './components/LinkRiskModal';
@@ -6,201 +6,187 @@ import VoiceCallModal from './components/VoiceCallModal';
 import VideoCallModal from './components/VideoCallModal';
 import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
-import { INITIAL_CONTACTS, DEFAULT_SETTINGS } from './utils/initialData';
-import { extractUrls, analyzeUrl } from './utils/linkDetector';
+import { DEFAULT_SETTINGS } from './utils/initialData';
+import { initChannel, destroyChannel, broadcastMessage, on } from './utils/realtimeChannel';
 
 function App() {
-  // ── Core State & Auth ──
+  // ── Auth ──
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('securechat_user');
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [contacts, setContacts] = useState(() => {
-    const saved = localStorage.getItem('securechat_contacts');
-    if (saved) return JSON.parse(saved);
-    return INITIAL_CONTACTS.map(c => ({ ...c, messages: [...c.messages] }));
-  });
-
-  const [activeContactId, setActiveContactId] = useState(null);
+  // ── Single global chatroom messages ──
+  const [messages, setMessages] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
+
+  // ── Mobile Responsive Sidebar State ──
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+
+  // ── PWA Install Prompt State ──
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
 
   // ── Modals ──
   const [linkModalData, setLinkModalData] = useState(null);
-  const [voiceCallContact, setVoiceCallContact] = useState(null);
-  const [videoCallContact, setVideoCallContact] = useState(null);
+  const [voiceCallActive, setVoiceCallActive] = useState(false);
+  const [videoCallActive, setVideoCallActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Sync contacts to localStorage
+  // Catch PWA beforeinstallprompt event
   useEffect(() => {
-    localStorage.setItem('securechat_contacts', JSON.stringify(contacts));
-  }, [contacts]);
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
 
-  // ── Derived ──
-  const activeContact = contacts.find(c => c.id === activeContactId) || null;
-  const activeMessages = activeContact?.messages || [];
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
+
+  // ── Real-time channel setup ──
+  const cleanupRef = useRef([]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    initChannel(currentUser);
+
+    // Listen for messages from other users
+    const unsub1 = on('message', (msg) => {
+      setMessages(prev => [...prev, msg]);
+    });
+
+    // Listen for presence changes
+    const unsub2 = on('presence', (users) => {
+      setOnlineUsers(users);
+    });
+
+    // Listen for user joined
+    const unsub3 = on('user_joined', (user) => {
+      setMessages(prev => [...prev, {
+        id: `sys_${Date.now()}`,
+        type: 'system',
+        text: `${user.name} joined the chat`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+    });
+
+    cleanupRef.current = [unsub1, unsub2, unsub3];
+
+    return () => {
+      cleanupRef.current.forEach(fn => fn());
+      destroyChannel();
+    };
+  }, [currentUser]);
+
+  // Announce departure on tab close
+  useEffect(() => {
+    const handleUnload = () => destroyChannel();
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, []);
 
   // ── Handlers ──
   const handleLogin = (user) => {
     setCurrentUser(user);
+    setMessages([]);
   };
 
   const handleLogout = () => {
+    destroyChannel();
     localStorage.removeItem('securechat_user');
     setCurrentUser(null);
+    setMessages([]);
+    setOnlineUsers([]);
     setShowSettings(false);
+    setShowMobileSidebar(false);
   };
 
-  const handleSelectContact = useCallback((contactId) => {
-    setActiveContactId(contactId);
-
-    // Clear unread count
-    setContacts(prev =>
-      prev.map(c =>
-        c.id === contactId ? { ...c, unreadCount: 0 } : c
-      )
-    );
-  }, []);
-
   const handleSendMessage = useCallback((msgPayload) => {
-    if (!activeContactId) return;
+    if (!currentUser) return;
 
     const messageText = typeof msgPayload === 'string' ? msgPayload : msgPayload.text;
     const imageUrl = typeof msgPayload === 'object' ? msgPayload.imageUrl : null;
 
     const newMsg = {
-      id: `msg_${Date.now()}`,
-      senderId: currentUser?.id || 'user_me',
+      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatar,
       text: messageText,
       imageUrl,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent'
     };
 
-    setContacts(prev =>
-      prev.map(c =>
-        c.id === activeContactId
-          ? { ...c, messages: [...c.messages, newMsg] }
-          : c
-      )
-    );
-
-    // Auto-update status to delivered after a moment
-    setTimeout(() => {
-      setContacts(prev =>
-        prev.map(c =>
-          c.id === activeContactId
-            ? {
-                ...c,
-                messages: c.messages.map(m =>
-                  m.id === newMsg.id ? { ...m, status: 'delivered' } : m
-                )
-              }
-            : c
-        )
-      );
-    }, 600);
-
-    // Auto-update status to read after a moment
-    setTimeout(() => {
-      setContacts(prev =>
-        prev.map(c =>
-          c.id === activeContactId
-            ? {
-                ...c,
-                messages: c.messages.map(m =>
-                  m.id === newMsg.id ? { ...m, status: 'read' } : m
-                )
-              }
-            : c
-        )
-      );
-    }, 1500);
-
-    // Bot auto-reply with link analysis
-    const contact = contacts.find(c => c.id === activeContactId);
-    if (contact?.isBot) {
-      const urls = extractUrls(messageText);
-      setTimeout(() => {
-        let replyText;
-
-        if (urls.length > 0) {
-          const analysis = analyzeUrl(urls[0]);
-          if (analysis.status === 'dangerous') {
-            replyText = `🚨 DANGER ALERT!\n\nThis link has been flagged as HIGH RISK (${analysis.riskPercentage}% danger score).\n\n⚠️ Risk factors detected: ${analysis.riskFactors.map(r => r.title).join(', ')}.\n\nWe strongly recommend NOT clicking this link. Tap the link in your message to see the full fraud analysis report.`;
-          } else if (analysis.status === 'suspicious') {
-            replyText = `⚠️ CAUTION\n\nThis link shows some suspicious indicators (${analysis.riskPercentage}% risk).\n\nProceed with caution. Tap the link to view the full security report.`;
-          } else {
-            replyText = `✅ Link appears SAFE!\n\nSafety score: ${analysis.safePercentage}%\nDomain: ${analysis.domain}\n\n${analysis.safeFactors.join(' • ')}\n\nTap the link to view the detailed analysis.`;
-          }
-        } else if (imageUrl) {
-          replyText = "📸 Photo received securely! E2E encrypted media payload verified with 0 malware signatures.";
-        } else {
-          replyText = "💡 Send me any URL link and I'll instantly analyze it for fraud, phishing threats, and security risks!\n\nTry pasting a link like:\n• http://free-crypto-giveaway.xyz\n• https://github.com";
-        }
-
-        const botReply = {
-          id: `msg_bot_${Date.now()}`,
-          senderId: contact.id,
-          text: replyText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: 'read'
-        };
-
-        setContacts(prev =>
-          prev.map(c =>
-            c.id === activeContactId
-              ? { ...c, messages: [...c.messages, botReply] }
-              : c
-          )
-        );
-      }, 1800);
-    }
-  }, [activeContactId, contacts, currentUser]);
+    setMessages(prev => [...prev, newMsg]);
+    broadcastMessage(newMsg);
+  }, [currentUser]);
 
   const handleOpenLinkModal = useCallback((linkData) => {
     setLinkModalData(linkData);
   }, []);
 
   const handleOpenVoiceCall = useCallback(() => {
-    if (activeContact) {
-      setVoiceCallContact(activeContact);
-    }
-  }, [activeContact]);
+    setVoiceCallActive(true);
+  }, []);
 
   const handleOpenVideoCall = useCallback(() => {
-    if (activeContact) {
-      setVideoCallContact(activeContact);
-    }
-  }, [activeContact]);
+    setVideoCallActive(true);
+  }, []);
 
-  // Gate app behind Login Modal if user is not logged in
+  // Gate app behind Login Modal
   if (!currentUser) {
     return <AuthModal onLogin={handleLogin} />;
   }
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden bg-[var(--bg-primary)]">
+    <div className="h-screen w-screen flex overflow-hidden bg-[var(--bg-primary)] relative">
 
-      {/* Sidebar */}
-      <Sidebar
-        contacts={contacts}
-        activeContactId={activeContactId}
-        onSelectContact={handleSelectContact}
-        currentUser={currentUser}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+      {/* Sidebar — Mobile Overlay Backdrop */}
+      {showMobileSidebar && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+          onClick={() => setShowMobileSidebar(false)}
+        />
+      )}
 
-      {/* Chat Panel */}
+      {/* Sidebar — Desktop static & Mobile drawer */}
+      <div className={`
+        fixed inset-y-0 left-0 z-40 md:relative md:z-auto transition-transform duration-300 ease-in-out
+        ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <Sidebar
+          onlineUsers={onlineUsers}
+          currentUser={currentUser}
+          onOpenSettings={() => { setShowSettings(true); setShowMobileSidebar(false); }}
+          onLogout={handleLogout}
+          onCloseMobile={() => setShowMobileSidebar(false)}
+          canInstallApp={!!deferredPrompt}
+          onInstallApp={handleInstallApp}
+        />
+      </div>
+
+      {/* Single Chat Panel */}
       <ChatPanel
-        contact={activeContact}
-        messages={activeMessages}
+        messages={messages}
         onSendMessage={handleSendMessage}
         onOpenLinkModal={handleOpenLinkModal}
         onOpenVoiceCall={handleOpenVoiceCall}
         onOpenVideoCall={handleOpenVideoCall}
-        onBack={() => setActiveContactId(null)}
-        currentUserId={currentUser.id}
+        currentUser={currentUser}
+        onlineUsers={onlineUsers}
+        onToggleMobileSidebar={() => setShowMobileSidebar(prev => !prev)}
       />
 
       {/* ── Modals ── */}
@@ -211,17 +197,15 @@ function App() {
         />
       )}
 
-      {voiceCallContact && (
+      {voiceCallActive && (
         <VoiceCallModal
-          contact={voiceCallContact}
-          onClose={() => setVoiceCallContact(null)}
+          onClose={() => setVoiceCallActive(false)}
         />
       )}
 
-      {videoCallContact && (
+      {videoCallActive && (
         <VideoCallModal
-          contact={videoCallContact}
-          onClose={() => setVideoCallContact(null)}
+          onClose={() => setVideoCallActive(false)}
         />
       )}
 
@@ -233,6 +217,8 @@ function App() {
           onUpdateUser={setCurrentUser}
           onLogout={handleLogout}
           onClose={() => setShowSettings(false)}
+          canInstallApp={!!deferredPrompt}
+          onInstallApp={handleInstallApp}
         />
       )}
     </div>

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   X, Shield, Lock, Bell, Eye, Globe,
-  ShieldCheck, Zap, Code2, Heart, ToggleLeft, ToggleRight, Camera
+  ShieldCheck, Zap, Code2, Heart, ToggleLeft, ToggleRight, Camera, Download
 } from 'lucide-react';
 import { PRESET_AVATARS } from '../utils/initialData';
 
-export default function SettingsPanel({ settings, onUpdateSettings, currentUser, onUpdateUser, onLogout, onClose }) {
+export default function SettingsPanel({ settings, onUpdateSettings, currentUser, onUpdateUser, onLogout, onClose, canInstallApp, onInstallApp }) {
   const [activeSection, setActiveSection] = useState('security');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [editName, setEditName] = useState(currentUser.name);
@@ -262,6 +262,18 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                 </div>
 
                 <div className="space-y-2">
+                  {canInstallApp && (
+                    <button
+                      onClick={onInstallApp}
+                      className="w-full flex items-center justify-between p-3.5 bg-[var(--bg-accent)]/15 border border-[var(--bg-accent)]/30 rounded-xl text-[var(--bg-accent)] font-semibold hover:bg-[var(--bg-accent)]/25 transition shadow-sm"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Download className="w-5 h-5" />
+                        <span>Install SecureChat App</span>
+                      </div>
+                      <span className="text-xs bg-[var(--bg-accent)] text-white px-2 py-0.5 rounded-full">Desktop / Mobile</span>
+                    </button>
+                  )}
                   <div className="flex items-center gap-3 p-3 bg-[var(--bg-tertiary)] rounded-xl">
                     <Zap className="w-4 h-4 text-amber-400" />
                     <span className="text-sm text-[var(--text-primary)]">Real-time fraud link detection</span>
