@@ -15,7 +15,7 @@
 
 import autocannon from 'autocannon';
 
-const BASE_URL = 'http://localhost:3456';
+const BASE_URL = process.env.BACKEND_URL || 'https://securechat-ioe9.onrender.com';
 
 // ── Configuration ───────────────────────────────────────────────────
 const DURATION_SECONDS = 60;   // 1 minute
