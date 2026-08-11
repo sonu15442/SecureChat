@@ -7,7 +7,8 @@ import VideoCallModal from './components/VideoCallModal';
 import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
 import { DEFAULT_SETTINGS } from './utils/initialData';
-import { initChannel, destroyChannel, broadcastMessage, on } from './utils/realtimeChannel';
+import { initChannel, destroyChannel, broadcastMessage, broadcastReadReceipt, on } from './utils/realtimeChannel';
+import { fetchAllUsers } from './utils/api';
 
 function App() {
   // ── Auth ──
@@ -16,10 +17,17 @@ function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // ── Single global chatroom messages ──
+  // ── Registered Users Directory (fetched from backend) ──
+  const [registeredUsers, setRegisteredUsers] = useState([]);
+
+  // ── Messages & Presence State ──
   const [messages, setMessages] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
+
+  // ── Active Chat Target ('global' or User object) ──
+  const [activeChatTarget, setActiveChatTarget] = useState('global');
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   // ── Mobile Responsive Sidebar State ──
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -32,6 +40,11 @@ function App() {
   const [voiceCallActive, setVoiceCallActive] = useState(false);
   const [videoCallActive, setVideoCallActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+
+  const activeChatTargetRef = useRef(activeChatTarget);
+  useEffect(() => {
+    activeChatTargetRef.current = activeChatTarget;
+  }, [activeChatTarget]);
 
   // Catch PWA beforeinstallprompt event
   useEffect(() => {
@@ -64,15 +77,44 @@ function App() {
     // Listen for messages from other users
     const unsub1 = on('message', (msg) => {
       setMessages(prev => [...prev, msg]);
+
+      if (msg.senderId !== currentUser.id) {
+        const currentTarget = activeChatTargetRef.current;
+        const isViewing = currentTarget && (
+          (currentTarget === 'global' && (!msg.recipientId || msg.recipientId === 'global')) ||
+          (currentTarget.id === msg.senderId && msg.recipientId === currentUser.id)
+        );
+
+        const newStatus = isViewing ? 'read' : 'delivered';
+        broadcastReadReceipt([msg.id], newStatus, currentUser.id, msg.senderId);
+
+        // If not actively viewing that chat, track unread count
+        if (!isViewing && msg.recipientId && msg.recipientId === currentUser.id) {
+          setUnreadCounts(prev => ({
+            ...prev,
+            [msg.senderId]: (prev[msg.senderId] || 0) + 1
+          }));
+        }
+      }
+    });
+
+    // Listen for read receipts
+    const unsub2 = on('read_receipt', ({ messageIds, status }) => {
+      setMessages(prev => prev.map(m => {
+        if (messageIds && messageIds.includes(m.id)) {
+          return { ...m, status };
+        }
+        return m;
+      }));
     });
 
     // Listen for presence changes
-    const unsub2 = on('presence', (users) => {
+    const unsub3 = on('presence', (users) => {
       setOnlineUsers(users);
     });
 
     // Listen for user joined
-    const unsub3 = on('user_joined', (user) => {
+    const unsub4 = on('user_joined', (user) => {
       setMessages(prev => [...prev, {
         id: `sys_${Date.now()}`,
         type: 'system',
@@ -81,7 +123,7 @@ function App() {
       }]);
     });
 
-    cleanupRef.current = [unsub1, unsub2, unsub3];
+    cleanupRef.current = [unsub1, unsub2, unsub3, unsub4];
 
     return () => {
       cleanupRef.current.forEach(fn => fn());
@@ -96,10 +138,46 @@ function App() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
+  // Combine registered users & online users
+  const allAvailableUsers = useRef([]);
+  const userMap = new Map();
+  registeredUsers.forEach(u => {
+    if (u.id !== currentUser?.id) {
+      userMap.set(u.id, { ...u, isOnline: false });
+    }
+  });
+  onlineUsers.forEach(u => {
+    if (u.id !== currentUser?.id) {
+      const existing = userMap.get(u.id);
+      userMap.set(u.id, { ...existing, ...u, isOnline: true });
+    }
+  });
+  allAvailableUsers.current = Array.from(userMap.values());
+
   // ── Handlers ──
+  // Fetch registered users from backend
+  const loadRegisteredUsers = useCallback(async () => {
+    try {
+      const users = await fetchAllUsers();
+      setRegisteredUsers(users);
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  }, []);
+
+  // Load users on mount and when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      loadRegisteredUsers();
+    }
+  }, [currentUser, loadRegisteredUsers]);
+
   const handleLogin = (user) => {
     setCurrentUser(user);
     setMessages([]);
+    setActiveChatTarget('global');
+    // Refresh user list from backend after login
+    loadRegisteredUsers();
   };
 
   const handleLogout = () => {
@@ -110,19 +188,48 @@ function App() {
     setOnlineUsers([]);
     setShowSettings(false);
     setShowMobileSidebar(false);
+    setActiveChatTarget('global');
   };
+
+  const handleSelectChatTarget = useCallback((target) => {
+    setActiveChatTarget(target);
+
+    if (currentUser && target && target.id && target !== 'global') {
+      // Clear unread count for selected target user
+      setUnreadCounts(prev => {
+        const updated = { ...prev };
+        delete updated[target.id];
+        return updated;
+      });
+
+      // Mark any unread messages from this target user as 'read'
+      setMessages(prev => {
+        const unreadIds = prev
+          .filter(m => m.senderId === target.id && m.recipientId === currentUser.id && m.status !== 'read')
+          .map(m => m.id);
+
+        if (unreadIds.length > 0) {
+          broadcastReadReceipt(unreadIds, 'read', currentUser.id, target.id);
+          return prev.map(m => unreadIds.includes(m.id) ? { ...m, status: 'read' } : m);
+        }
+        return prev;
+      });
+    }
+  }, [currentUser]);
 
   const handleSendMessage = useCallback((msgPayload) => {
     if (!currentUser) return;
 
     const messageText = typeof msgPayload === 'string' ? msgPayload : msgPayload.text;
     const imageUrl = typeof msgPayload === 'object' ? msgPayload.imageUrl : null;
+    const recipientId = activeChatTarget && activeChatTarget !== 'global' ? activeChatTarget.id : 'global';
 
     const newMsg = {
       id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderAvatar: currentUser.avatar,
+      recipientId,
       text: messageText,
       imageUrl,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -131,7 +238,7 @@ function App() {
 
     setMessages(prev => [...prev, newMsg]);
     broadcastMessage(newMsg);
-  }, [currentUser]);
+  }, [currentUser, activeChatTarget]);
 
   const handleOpenLinkModal = useCallback((linkData) => {
     setLinkModalData(linkData);
@@ -167,8 +274,12 @@ function App() {
         ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <Sidebar
+          allUsers={allAvailableUsers.current}
           onlineUsers={onlineUsers}
           currentUser={currentUser}
+          activeChatTarget={activeChatTarget}
+          onSelectChatTarget={handleSelectChatTarget}
+          unreadCounts={unreadCounts}
           onOpenSettings={() => { setShowSettings(true); setShowMobileSidebar(false); }}
           onLogout={handleLogout}
           onCloseMobile={() => setShowMobileSidebar(false)}
@@ -177,9 +288,12 @@ function App() {
         />
       </div>
 
-      {/* Single Chat Panel */}
+      {/* Chat Panel */}
       <ChatPanel
         messages={messages}
+        allUsers={allAvailableUsers.current}
+        activeChatTarget={activeChatTarget}
+        onSelectChatTarget={handleSelectChatTarget}
         onSendMessage={handleSendMessage}
         onOpenLinkModal={handleOpenLinkModal}
         onOpenVoiceCall={handleOpenVoiceCall}

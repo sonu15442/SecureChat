@@ -1,8 +1,32 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AuthModal from './AuthModal';
+
+// Mock the API module
+vi.mock('../utils/api', () => ({
+  loginUser: vi.fn(async (username, password) => ({
+    user: {
+      id: `user_${username}`,
+      name: username,
+      username: `@${username}`,
+      avatar: 'test-avatar.jpg',
+      bio: 'test bio',
+      status: 'online'
+    }
+  })),
+  registerUser: vi.fn(async (username, password, fullName) => ({
+    user: {
+      id: `user_${username}`,
+      name: fullName,
+      username: `@${username}`,
+      avatar: 'test-avatar.jpg',
+      bio: 'test bio',
+      status: 'online'
+    }
+  }))
+}));
 
 describe('AuthModal Component', () => {
   it('renders login header and input fields', () => {
@@ -19,7 +43,7 @@ describe('AuthModal Component', () => {
     expect(screen.getByText(/Please enter both username and password/i)).toBeInTheDocument();
   });
 
-  it('triggers onLogin when form is submitted with valid credentials', () => {
+  it('triggers onLogin when form is submitted with valid credentials', async () => {
     const handleLogin = vi.fn();
     render(<AuthModal onLogin={handleLogin} />);
     
@@ -31,7 +55,10 @@ describe('AuthModal Component', () => {
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
     fireEvent.click(submitBtn);
 
-    expect(handleLogin).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(handleLogin).toHaveBeenCalledTimes(1);
+    });
     expect(handleLogin.mock.calls[0][0].username).toBe('@john_doe');
   });
 });
+

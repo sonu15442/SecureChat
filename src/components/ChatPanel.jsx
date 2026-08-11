@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, Paperclip, Phone, Video, MoreVertical, ShieldCheck, ShieldAlert, Check, CheckCheck, Clock, Lock, X, Users } from 'lucide-react';
+import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, CheckCheck, Clock, Lock, X, Users, Search, MessageCircle, ArrowLeft } from 'lucide-react';
 import { extractUrls, analyzeUrl } from '../utils/linkDetector';
 import { EMOJI_CATEGORIES } from '../utils/initialData';
 import { broadcastTyping, on } from '../utils/realtimeChannel';
 
 export default function ChatPanel({
   messages,
+  activeChatTarget = 'global',
+  onSelectChatTarget,
   onSendMessage,
   onOpenLinkModal,
   onOpenVoiceCall,
@@ -20,14 +22,36 @@ export default function ChatPanel({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
   const [typingUsers, setTypingUsers] = useState([]);
+  
+  // ── Search State ──
+  const [showSearchHeader, setShowSearchHeader] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchedUserModal, setSearchedUserModal] = useState(null);
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const emojiPickerRef = useRef(null);
 
+  const isGlobal = !activeChatTarget || activeChatTarget === 'global';
+  const targetUser = !isGlobal && typeof activeChatTarget === 'object' ? activeChatTarget : null;
+
+  // Filter messages for current chat target (Global vs 1-on-1 Private)
+  const displayedMessages = messages.filter(msg => {
+    if (isGlobal) {
+      return !msg.recipientId || msg.recipientId === 'global';
+    } else if (targetUser) {
+      return (
+        (msg.senderId === currentUser.id && msg.recipientId === targetUser.id) ||
+        (msg.senderId === targetUser.id && msg.recipientId === currentUser.id)
+      );
+    }
+    return true;
+  });
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [displayedMessages]);
 
   // Listen for typing indicators from other users
   useEffect(() => {
@@ -187,6 +211,16 @@ export default function ChatPanel({
   };
 
   const totalOnline = onlineUsers.length + 1;
+  const q = searchQuery.toLowerCase().trim();
+
+  // Search matches across users and messages
+  const matchedUsers = q ? [currentUser, ...onlineUsers].filter(u => 
+    u && ((u.name && u.name.toLowerCase().includes(q)) || (u.username && u.username.toLowerCase().includes(q)))
+  ) : [];
+
+  const matchedMessages = q ? displayedMessages.filter(m => 
+    m.text && m.text.toLowerCase().includes(q)
+  ) : [];
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[var(--bg-primary)]">
@@ -203,22 +237,80 @@ export default function ChatPanel({
             <Users className="w-5 h-5 text-[var(--bg-accent)]" />
           </button>
 
-          <div className="p-2 rounded-xl bg-[var(--bg-accent)]/10">
-            <ShieldCheck className="w-6 h-6 text-[var(--bg-accent)]" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
-              SecureChat Room
-              <Lock className="w-3.5 h-3.5 text-[var(--bg-accent)]" />
-            </h2>
-            <p className="text-[12px] text-[var(--text-secondary)] flex items-center gap-1">
-              <Users className="w-3 h-3" />
-              {totalOnline} {totalOnline === 1 ? 'user' : 'users'} online
-            </p>
-          </div>
+          {isGlobal ? (
+            <>
+              <div className="p-2 rounded-xl bg-[var(--bg-accent)]/10">
+                <ShieldCheck className="w-6 h-6 text-[var(--bg-accent)]" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                  SecureChat Global Room
+                  <Lock className="w-3.5 h-3.5 text-[var(--bg-accent)]" />
+                </h2>
+                <p className="text-[12px] text-[var(--text-secondary)] flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  {totalOnline} {totalOnline === 1 ? 'user' : 'users'} online
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => onSelectChatTarget('global')}
+                className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
+                title="Back to Global Room"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+
+              <div className="relative">
+                <img
+                  src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                  alt={targetUser?.name}
+                  className="w-9 h-9 rounded-full object-cover ring-2 ring-[var(--bg-accent)]/40"
+                />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
+              </div>
+
+              <div>
+                <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                  {targetUser?.name}
+                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                </h2>
+                <p className="text-[11px] text-emerald-400 flex items-center gap-1">
+                  <span>Direct Encrypted Chat</span>
+                  {targetUser?.username && <span className="text-[var(--text-secondary)] font-normal">• @{targetUser.username}</span>}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
+          {!isGlobal && (
+            <button
+              onClick={() => onSelectChatTarget('global')}
+              className="hidden sm:flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[var(--bg-accent)] bg-[var(--bg-accent)]/10 hover:bg-[var(--bg-accent)]/20 rounded-xl transition mr-1"
+            >
+              <Users className="w-3.5 h-3.5" />
+              Global Chat
+            </button>
+          )}
+
+          {/* Search Icon Toggle Button */}
+          <button
+            id="search-toggle-btn"
+            onClick={() => setShowSearchHeader(!showSearchHeader)}
+            className={`p-2.5 rounded-xl transition ${
+              showSearchHeader
+                ? 'text-[var(--bg-accent)] bg-[var(--bg-accent)]/10'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+            }`}
+            title="Search Users & Messages"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+
           <button
             id="voice-call-btn"
             onClick={onOpenVoiceCall}
@@ -238,83 +330,257 @@ export default function ChatPanel({
         </div>
       </div>
 
+      {/* ── Header Slide-Down Search Bar ── */}
+      {showSearchHeader && (
+        <div className="px-4 py-3 bg-[var(--bg-secondary)]/95 border-b border-[var(--border-color)] animate-slide-down shadow-lg">
+          <div className="relative flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                id="chat-search-input"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search users or messages..."
+                className="w-full bg-[var(--bg-tertiary)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] text-sm pl-9 pr-8 py-2 rounded-xl border border-[var(--bg-accent)]/30 focus:outline-none"
+                autoFocus
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-0.5 rounded-full"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => { setShowSearchHeader(false); setSearchQuery(''); }}
+              className="px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {/* Search Dropdown / Live Results */}
+          {q && (
+            <div className="mt-3 max-h-60 overflow-y-auto space-y-3 pt-2 border-t border-[var(--border-color)]">
+              {/* Users matching */}
+              <div>
+                <p className="text-[11px] font-bold text-[var(--bg-accent)] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5" />
+                  Matching Users ({matchedUsers.length})
+                </p>
+                {matchedUsers.length === 0 ? (
+                  <p className="text-xs text-[var(--text-secondary)] italic pl-2">No user matches found</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {matchedUsers.map(u => (
+                      <div
+                        key={u.id || u.username}
+                        onClick={() => {
+                          if (u.id !== currentUser.id && onSelectChatTarget) {
+                            onSelectChatTarget(u);
+                            setShowSearchHeader(false);
+                            setSearchQuery('');
+                          } else {
+                            setSearchedUserModal(u);
+                          }
+                        }}
+                        className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--bg-tertiary)]/70 hover:bg-[var(--bg-tertiary)] cursor-pointer transition group"
+                      >
+                        <img
+                          src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                          alt={u.name}
+                          className="w-7 h-7 rounded-full object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--bg-accent)] truncate">{u.name}</p>
+                          <p className="text-[10px] text-emerald-400">{u.id === currentUser.id ? 'You' : 'Click to Chat'}</p>
+                        </div>
+                        {u.id !== currentUser.id && (
+                          <MessageCircle className="w-3.5 h-3.5 text-[var(--bg-accent)] opacity-80" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Messages matching */}
+              <div>
+                <p className="text-[11px] font-bold text-[var(--bg-accent)] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Matching Messages ({matchedMessages.length})
+                </p>
+                {matchedMessages.length === 0 ? (
+                  <p className="text-xs text-[var(--text-secondary)] italic pl-2">No message matches found</p>
+                ) : (
+                  <div className="space-y-1">
+                    {matchedMessages.map((m, idx) => (
+                      <div key={m.id || idx} className="p-2 rounded-xl bg-[var(--bg-tertiary)]/50 text-xs">
+                        <div className="flex justify-between items-center text-[10px] text-[var(--text-secondary)] mb-0.5">
+                          <span className="font-semibold text-[var(--bg-accent)]">{m.senderName}</span>
+                          <span>{m.timestamp}</span>
+                        </div>
+                        <p className="text-[var(--text-primary)] line-clamp-2">{m.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* User Profile Modal from Header Search */}
+      {searchedUserModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setSearchedUserModal(null)}
+        >
+          <div
+            className="w-80 glass-modal rounded-2xl p-5 border border-[var(--border-color)] shadow-2xl animate-scale-in text-center relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSearchedUserModal(null)}
+              className="absolute top-3 right-3 p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-full transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <img
+              src={searchedUserModal.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+              alt={searchedUserModal.name}
+              className="w-20 h-20 rounded-full object-cover mx-auto ring-4 ring-[var(--bg-accent)]/30 mb-3"
+            />
+            <h3 className="text-lg font-bold text-[var(--text-primary)]">{searchedUserModal.name}</h3>
+            <p className="text-xs text-[var(--bg-accent)] font-medium mb-2">
+              {searchedUserModal.id === currentUser.id ? 'You' : `@${searchedUserModal.username || 'user'}`}
+            </p>
+            
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-medium mb-4">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Online User
+            </div>
+
+            {searchedUserModal.id !== currentUser.id && (
+              <button
+                onClick={() => {
+                  if (onSelectChatTarget) onSelectChatTarget(searchedUserModal);
+                  setSearchedUserModal(null);
+                }}
+                className="w-full py-2.5 mb-2 bg-[var(--bg-accent)] hover:bg-[var(--bg-accent-hover)] text-white text-xs font-bold rounded-xl transition shadow-lg flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-4 h-4" />
+                Start Private Chat
+              </button>
+            )}
+
+            <button
+              onClick={() => setSearchedUserModal(null)}
+              className="w-full py-2 bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-semibold rounded-xl transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Messages Area ── */}
       <div className="flex-1 overflow-y-auto px-4 py-4 chat-bg-pattern">
         <div className="flex justify-center mb-6">
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/5 border border-amber-500/10 rounded-lg text-[11px] text-amber-300/70">
             <Lock className="w-3 h-3" />
-            Messages are end-to-end encrypted. All links are auto-scanned for threats.
+            {isGlobal 
+              ? 'Global Room: End-to-end encrypted. All links are auto-scanned for threats.'
+              : `Private 1-on-1 Chat with ${targetUser?.name}: Encrypted end-to-end.`}
           </div>
         </div>
 
         <div className="space-y-3">
-          {messages.map((msg, idx) => {
-            // System messages (user joined, etc.)
-            if (msg.type === 'system') {
+          {displayedMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <MessageCircle className="w-12 h-12 text-[var(--bg-accent)]/30 mb-3 animate-pulse" />
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                {isGlobal ? 'No messages yet in Global Room' : `Start private chat with ${targetUser?.name}`}
+              </p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
+                {isGlobal ? 'Say hi to everyone online!' : 'Messages sent here are private between you two.'}
+              </p>
+            </div>
+          ) : (
+            displayedMessages.map((msg, idx) => {
+              // System messages (user joined, etc.)
+              if (msg.type === 'system') {
+                return (
+                  <div key={msg.id || idx} className="flex justify-center animate-message">
+                    <span className="text-[11px] text-[var(--text-secondary)] bg-[var(--bg-tertiary)] px-3 py-1 rounded-full">
+                      {msg.text}
+                    </span>
+                  </div>
+                );
+              }
+
+              const isMe = msg.senderId === currentUser?.id;
               return (
-                <div key={msg.id || idx} className="flex justify-center animate-message">
-                  <span className="text-[11px] text-[var(--text-secondary)] bg-[var(--bg-tertiary)] px-3 py-1 rounded-full">
-                    {msg.text}
-                  </span>
-                </div>
-              );
-            }
-
-            const isMe = msg.senderId === currentUser?.id;
-            return (
-              <div
-                key={msg.id || idx}
-                className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-message`}
-                style={{ animationDelay: `${Math.min(idx * 0.02, 0.2)}s` }}
-              >
-                {/* Other user's avatar */}
-                {!isMe && (
-                  <img
-                    src={msg.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                    alt={msg.senderName}
-                    className="w-8 h-8 rounded-full object-cover mr-2 mt-1 shrink-0"
-                  />
-                )}
-
                 <div
-                  className={`relative max-w-[70%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                    isMe
-                      ? 'bg-[var(--msg-out-bg)] text-[var(--text-primary)] rounded-br-md'
-                      : 'bg-[var(--msg-in-bg)] text-[var(--text-primary)] rounded-bl-md'
-                  }`}
+                  key={msg.id || idx}
+                  className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-message`}
+                  style={{ animationDelay: `${Math.min(idx * 0.02, 0.2)}s` }}
                 >
-                  {/* Sender name for group chat */}
-                  {!isMe && msg.senderName && (
-                    <p className="text-[11px] font-bold text-[var(--bg-accent)] mb-1">{msg.senderName}</p>
+                  {/* Other user's avatar */}
+                  {!isMe && (
+                    <img
+                      src={msg.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                      alt={msg.senderName}
+                      className="w-8 h-8 rounded-full object-cover mr-2 mt-1 shrink-0"
+                    />
                   )}
 
-                  {/* Photo Attachment */}
-                  {msg.imageUrl && (
-                    <div 
-                      className="mb-2 overflow-hidden rounded-xl cursor-pointer transition-transform hover:scale-[1.02]"
-                      onClick={() => setPreviewImageModal(msg.imageUrl)}
-                    >
-                      <img 
-                        src={msg.imageUrl} 
-                        alt="Shared media" 
-                        className="max-h-60 rounded-xl object-cover border border-white/10"
-                      />
+                  <div
+                    className={`relative max-w-[70%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                      isMe
+                        ? 'bg-[var(--msg-out-bg)] text-[var(--text-primary)] rounded-br-md'
+                        : 'bg-[var(--msg-in-bg)] text-[var(--text-primary)] rounded-bl-md'
+                    }`}
+                  >
+                    {/* Sender name for group/private chat */}
+                    {!isMe && msg.senderName && (
+                      <p className="text-[11px] font-bold text-[var(--bg-accent)] mb-1">{msg.senderName}</p>
+                    )}
+
+                    {/* Photo Attachment */}
+                    {msg.imageUrl && (
+                      <div 
+                        className="mb-2 overflow-hidden rounded-xl cursor-pointer transition-transform hover:scale-[1.02]"
+                        onClick={() => setPreviewImageModal(msg.imageUrl)}
+                      >
+                        <img 
+                          src={msg.imageUrl} 
+                          alt="Shared media" 
+                          className="max-h-60 rounded-xl object-cover border border-white/10"
+                        />
+                      </div>
+                    )}
+
+                    {/* Text Message */}
+                    {msg.text && (
+                      <div className="break-words whitespace-pre-wrap">{renderMessageText(msg.text)}</div>
+                    )}
+
+                    <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <span className="text-[10px] text-gray-400">{msg.timestamp}</span>
+                      {isMe && getStatusIcon(msg.status)}
                     </div>
-                  )}
-
-                  {/* Text Message */}
-                  {msg.text && (
-                    <div className="break-words whitespace-pre-wrap">{renderMessageText(msg.text)}</div>
-                  )}
-
-                  <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    <span className="text-[10px] text-gray-400">{msg.timestamp}</span>
-                    {isMe && getStatusIcon(msg.status)}
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
 
           {/* Typing Indicator */}
           {typingUsers.length > 0 && (

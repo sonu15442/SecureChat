@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server.js",
+    "dev:full": "npx -y concurrently \"npm run server\" \"npm run dev\"",
     "build": "vite build",
     "test": "vitest run",
     "lint": "oxlint",

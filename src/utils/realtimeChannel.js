@@ -33,6 +33,9 @@ export function initChannel(user) {
       case 'message':
         emit('message', payload);
         break;
+      case 'read_receipt':
+        emit('read_receipt', payload);
+        break;
       case 'heartbeat':
         onlineUsers.set(payload.user.id, { user: payload.user, lastSeen: Date.now() });
         emit('presence', getOnlineUsersList());
@@ -85,6 +88,10 @@ export function broadcastMessage(msg) {
   broadcastRaw('message', msg);
 }
 
+export function broadcastReadReceipt(messageIds, status, readerId, senderId) {
+  broadcastRaw('read_receipt', { messageIds, status, readerId, senderId });
+}
+
 export function broadcastTyping(userId, userName) {
   broadcastRaw('typing', { userId, userName, timestamp: Date.now() });
 }
@@ -114,3 +121,4 @@ export function destroyChannel() {
   currentUserId = null;
   currentUserData = null;
 }
+

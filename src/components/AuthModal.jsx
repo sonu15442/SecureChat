@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ShieldCheck, User, KeyRound, ArrowRight, ShieldAlert } from 'lucide-react';
+import { ShieldCheck, User, KeyRound, ArrowRight, ShieldAlert, Loader2 } from 'lucide-react';
+import { registerUser, loginUser } from '../utils/api';
 
 export default function AuthModal({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -7,8 +8,9 @@ export default function AuthModal({ onLogin }) {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -22,18 +24,34 @@ export default function AuthModal({ onLogin }) {
       return;
     }
 
-    const userData = {
-      id: `user_${username.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-      name: isRegister ? (fullName.trim() || username) : username.split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' '),
-      username: username.startsWith('@') ? username : `@${username.toLowerCase()}`,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
-      bio: '🔒 Protected by SecureChat Guard | Online',
-      phone: '+1 (555) 019-8822',
-      status: 'online'
-    };
+    if (isRegister && !fullName.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
 
-    localStorage.setItem('securechat_user', JSON.stringify(userData));
-    onLogin(userData);
+    setLoading(true);
+
+    try {
+      let userData;
+
+      if (isRegister) {
+        // ── Register new account via backend ──
+        const result = await registerUser(username, password, fullName);
+        userData = result.user;
+      } else {
+        // ── Login via backend — validates password ──
+        const result = await loginUser(username, password);
+        userData = result.user;
+      }
+
+      // Save to localStorage for session persistence
+      localStorage.setItem('securechat_user', JSON.stringify(userData));
+      onLogin(userData);
+    } catch (err) {
+      setError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -132,10 +150,20 @@ export default function AuthModal({ onLogin }) {
 
           <button
             type="submit"
-            className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold rounded-xl transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 group mt-2"
+            disabled={loading}
+            className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 group mt-2"
           >
-            <span>{isRegister ? 'Create Secure Account' : 'Sign In to SecureChat'}</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{isRegister ? 'Creating Account...' : 'Signing In...'}</span>
+              </>
+            ) : (
+              <>
+                <span>{isRegister ? 'Create Secure Account' : 'Sign In to SecureChat'}</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </>
+            )}
           </button>
         </form>
 

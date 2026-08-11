@@ -8,6 +8,7 @@ export const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=250&q=80'
 ];
 
+
 export const DEFAULT_SETTINGS = {
   linkSecurity: 'strict',
   autoScanLinks: true,
