@@ -11,15 +11,19 @@ const app = express();
 const PORT = 3001;
 const DATA_DIR = join(__dirname, 'data');
 const USERS_FILE = join(DATA_DIR, 'users.json');
+const MESSAGES_FILE = join(DATA_DIR, 'messages.json');
 
 // Ensure data directory exists
 if (!existsSync(DATA_DIR)) {
   mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Ensure users.json exists
+// Ensure users.json and messages.json exist
 if (!existsSync(USERS_FILE)) {
   writeFileSync(USERS_FILE, '[]', 'utf-8');
+}
+if (!existsSync(MESSAGES_FILE)) {
+  writeFileSync(MESSAGES_FILE, '[]', 'utf-8');
 }
 
 // ── Middleware ──
@@ -46,6 +50,19 @@ function loadUsers() {
 
 function saveUsers(users) {
   writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+}
+
+function loadMessages() {
+  try {
+    const data = readFileSync(MESSAGES_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(messages) {
+  writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2), 'utf-8');
 }
 
 function hashPassword(password, salt) {
@@ -155,6 +172,38 @@ app.get('/api/users', (req, res) => {
   const users = loadUsers();
   const safeUsers = users.map(({ passwordHash, salt, ...safe }) => safe);
   res.json({ users: safeUsers });
+});
+
+/**
+ * GET /api/messages
+ * Returns: { messages: [...] } — all stored chat messages
+ */
+app.get('/api/messages', (req, res) => {
+  const messages = loadMessages();
+  res.json({ messages });
+});
+
+/**
+ * POST /api/messages
+ * Body: message object
+ * Appends message to history
+ */
+app.post('/api/messages', (req, res) => {
+  const message = req.body;
+  if (!message || !message.id) {
+    return res.status(400).json({ error: 'Invalid message payload.' });
+  }
+
+  const messages = loadMessages();
+  // Prevent duplicates
+  const existingIdx = messages.findIndex(m => m.id === message.id);
+  if (existingIdx !== -1) {
+    messages[existingIdx] = { ...messages[existingIdx], ...message };
+  } else {
+    messages.push(message);
+  }
+  saveMessages(messages);
+  res.status(201).json({ message });
 });
 
 // ── Start Server ──

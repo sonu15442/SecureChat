@@ -8,7 +8,7 @@ import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
 import { DEFAULT_SETTINGS } from './utils/initialData';
 import { initChannel, destroyChannel, broadcastMessage, broadcastReadReceipt, on } from './utils/realtimeChannel';
-import { fetchAllUsers } from './utils/api';
+import { fetchAllUsers, fetchStoredMessages, saveStoredMessage } from './utils/api';
 
 function App() {
   // ── Auth ──
@@ -76,7 +76,11 @@ function App() {
 
     // Listen for messages from other users
     const unsub1 = on('message', (msg) => {
-      setMessages(prev => [...prev, msg]);
+      setMessages(prev => {
+        if (prev.some(m => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+      saveStoredMessage(msg);
 
       if (msg.senderId !== currentUser.id) {
         const currentTarget = activeChatTargetRef.current;
@@ -155,29 +159,32 @@ function App() {
   allAvailableUsers.current = Array.from(userMap.values());
 
   // ── Handlers ──
-  // Fetch registered users from backend
-  const loadRegisteredUsers = useCallback(async () => {
+  // Fetch stored messages from backend
+  const loadStoredMessages = useCallback(async () => {
     try {
-      const users = await fetchAllUsers();
-      setRegisteredUsers(users);
+      const history = await fetchStoredMessages();
+      if (history && history.length > 0) {
+        setMessages(history);
+      }
     } catch (err) {
-      console.error('Failed to fetch users:', err);
+      console.error('Failed to fetch messages:', err);
     }
   }, []);
 
-  // Load users on mount and when currentUser changes
+  // Load users & messages on mount and when currentUser changes
   useEffect(() => {
     if (currentUser) {
       loadRegisteredUsers();
+      loadStoredMessages();
     }
-  }, [currentUser, loadRegisteredUsers]);
+  }, [currentUser, loadRegisteredUsers, loadStoredMessages]);
 
   const handleLogin = (user) => {
     setCurrentUser(user);
-    setMessages([]);
     setActiveChatTarget('global');
-    // Refresh user list from backend after login
+    // Refresh user list and load message history after login
     loadRegisteredUsers();
+    loadStoredMessages();
   };
 
   const handleLogout = () => {
@@ -238,6 +245,7 @@ function App() {
 
     setMessages(prev => [...prev, newMsg]);
     broadcastMessage(newMsg);
+    saveStoredMessage(newMsg);
   }, [currentUser, activeChatTarget]);
 
   const handleOpenLinkModal = useCallback((linkData) => {

@@ -159,3 +159,59 @@ export async function fetchAllUsers() {
   }
 }
 
+/**
+ * Fetch all stored chat messages
+ */
+export async function fetchStoredMessages() {
+  try {
+    const res = await fetch(`${API_BASE}/messages`);
+    const data = await safeParseResponse(res);
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to fetch messages.');
+    }
+
+    return data.messages || [];
+  } catch {
+    // ── Fallback: LocalStorage DB ──
+    try {
+      return JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Save a message to backend & offline storage
+ */
+export async function saveStoredMessage(message) {
+  if (!message || !message.id) return;
+
+  // Always sync to localStorage as offline safety net
+  try {
+    const localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
+    const existingIdx = localMsgs.findIndex(m => m.id === message.id);
+    if (existingIdx !== -1) {
+      localMsgs[existingIdx] = { ...localMsgs[existingIdx], ...message };
+    } else {
+      localMsgs.push(message);
+    }
+    localStorage.setItem('securechat_all_messages', JSON.stringify(localMsgs));
+  } catch (e) {
+    console.error('LocalStorage message save error:', e);
+  }
+
+  // Also send to backend
+  try {
+    await fetch(`${API_BASE}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+  } catch {
+    // Backend offline — local storage fallback already handled
+  }
+}
+
+
