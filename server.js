@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const DATA_DIR = join(__dirname, 'data');
 const USERS_FILE = join(DATA_DIR, 'users.json');
 const MESSAGES_FILE = join(DATA_DIR, 'messages.json');
@@ -29,7 +29,7 @@ if (!existsSync(MESSAGES_FILE)) {
 // ── Middleware ──
 app.use(express.json());
 
-// CORS (for dev — Vite proxy handles this in dev, but this is a safety net)
+// CORS
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -37,6 +37,12 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// Serve static frontend files from dist/
+const distPath = join(__dirname, 'dist');
+if (existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
 
 // ── Helpers ──
 function loadUsers() {
@@ -65,11 +71,21 @@ function saveMessages(messages) {
   writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2), 'utf-8');
 }
 
-function hashPassword(password, salt) {
-  return createHash('sha256').update(password + salt).digest('hex');
+function hashPassword(password) {
+  return createHash('sha256').update(password).digest('hex');
 }
 
-// Avatars to cycle through for new accounts
+function generatePassword() {
+  // Generate an 8-character alphanumeric password
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = randomBytes(8);
+  let password = '';
+  for (let i = 0; i < 8; i++) {
+    password += chars[bytes[i] % chars.length];
+  }
+  return password;
+}
+
 const AVATARS = [
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80',
@@ -82,101 +98,113 @@ const AVATARS = [
 // ── API Routes ──
 
 /**
- * POST /api/register
- * Body: { username, password, fullName }
- * Returns: { user } or 400/409 error
+ * POST /api/auth/register
+ * Body: { email, fullName }
+ * Creates a new user with a generated permanent password.
+ * Returns: { success: true, user, password }  (password shown once)
  */
-app.post('/api/register', (req, res) => {
-  const { username, password, fullName } = req.body;
+app.post('/api/auth/register', (req, res) => {
+  const { email, fullName } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required.' });
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
-  if (password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters long.' });
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Invalid email address format.' });
+  }
+
+  if (!fullName || !fullName.trim()) {
+    return res.status(400).json({ error: 'Please enter your full name.' });
   }
 
   const users = loadUsers();
-  const normalizedUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
 
-  // Check if username already exists
-  const existing = users.find(u => u.username === `@${normalizedUsername}`);
-  if (existing) {
-    return res.status(409).json({ error: 'Username already taken. Please choose another.' });
+  // Check if email already exists
+  const existingUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+  if (existingUser) {
+    return res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
   }
 
-  // Hash password with salt
-  const salt = randomBytes(16).toString('hex');
-  const passwordHash = hashPassword(password, salt);
+  // Generate permanent password
+  const plainPassword = generatePassword();
+  const hashedPassword = hashPassword(plainPassword);
 
-  const newUser = {
-    id: `user_${normalizedUsername}`,
-    name: fullName?.trim() || username,
-    username: `@${normalizedUsername}`,
+  const userTag = `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+
+  const user = {
+    id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: fullName.trim(),
+    username: userTag,
+    email: cleanEmail,
+    phone: '',
     avatar: AVATARS[users.length % AVATARS.length],
-    bio: '🔒 Protected by SecureChat Guard | Online',
-    phone: '+1 (555) 019-8822',
+    bio: '🔒 Protected by SecureChat Guard',
     status: 'online',
-    // Auth fields (never sent to frontend)
-    passwordHash,
-    salt,
+    passwordHash: hashedPassword,
     createdAt: new Date().toISOString()
   };
 
-  users.push(newUser);
+  users.push(user);
   saveUsers(users);
 
-  // Return user without sensitive fields
-  const { passwordHash: _, salt: __, ...safeUser } = newUser;
-  res.status(201).json({ user: safeUser });
+  // Return user data WITHOUT passwordHash, but WITH the plain password (shown once)
+  const { passwordHash, ...safeUser } = user;
+
+  res.status(201).json({
+    success: true,
+    user: safeUser,
+    password: plainPassword
+  });
 });
 
 /**
- * POST /api/login
- * Body: { username, password }
- * Returns: { user } or 401 error
+ * POST /api/auth/login
+ * Body: { email, password }
+ * Returns: { success: true, user }
  */
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required.' });
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Please enter your email address.' });
   }
 
+  if (!password || !password.trim()) {
+    return res.status(400).json({ error: 'Please enter your password.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
   const users = loadUsers();
-  const normalizedUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
 
-  const user = users.find(u => u.username === `@${normalizedUsername}`);
-
+  const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
   if (!user) {
-    return res.status(401).json({ error: 'Account not found. Please create an account first.' });
+    return res.status(401).json({ error: 'No account found with this email. Please register first.' });
   }
 
-  // Verify password
-  const attemptHash = hashPassword(password, user.salt);
-  if (attemptHash !== user.passwordHash) {
-    return res.status(401).json({ error: 'Password is invalid. Please try again.' });
+  const inputHash = hashPassword(password.trim());
+  if (user.passwordHash !== inputHash) {
+    return res.status(401).json({ error: 'Incorrect password. Please try again.' });
   }
 
-  // Return user without sensitive fields
-  const { passwordHash: _, salt: __, ...safeUser } = user;
-  res.status(200).json({ user: safeUser });
+  // Return user data WITHOUT passwordHash
+  const { passwordHash, ...safeUser } = user;
+
+  res.status(200).json({ success: true, user: safeUser });
 });
 
 /**
  * GET /api/users
- * Returns: { users: [...] } — all registered users (without passwords)
  */
 app.get('/api/users', (req, res) => {
-  const users = loadUsers();
-  const safeUsers = users.map(({ passwordHash, salt, ...safe }) => safe);
-  res.json({ users: safeUsers });
+  const users = loadUsers().map(({ passwordHash, ...u }) => u);
+  res.json({ users });
 });
 
 /**
  * GET /api/messages
- * Returns: { messages: [...] } — all stored chat messages
  */
 app.get('/api/messages', (req, res) => {
   const messages = loadMessages();
@@ -185,8 +213,6 @@ app.get('/api/messages', (req, res) => {
 
 /**
  * POST /api/messages
- * Body: message object
- * Appends message to history
  */
 app.post('/api/messages', (req, res) => {
   const message = req.body;
@@ -195,7 +221,6 @@ app.post('/api/messages', (req, res) => {
   }
 
   const messages = loadMessages();
-  // Prevent duplicates
   const existingIdx = messages.findIndex(m => m.id === message.id);
   if (existingIdx !== -1) {
     messages[existingIdx] = { ...messages[existingIdx], ...message };
@@ -206,12 +231,18 @@ app.post('/api/messages', (req, res) => {
   res.status(201).json({ message });
 });
 
-// ── Start Server ──
+// ── Catch-all: serve index.html for client-side routing ──
+app.get('*', (req, res) => {
+  const indexPath = join(distPath, 'index.html');
+  if (existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('App not built yet. Run npm run build first.');
+  }
+});
+
 app.listen(PORT, () => {
   const users = loadUsers();
-  console.log(`\n🔐 SecureChat Backend Server running on http://localhost:${PORT}`);
+  console.log(`\n🔐 SecureChat Backend Server running on port ${PORT}`);
   console.log(`📦 ${users.length} registered account(s) in database`);
-  console.log(`\n   POST /api/register  — Create a new account`);
-  console.log(`   POST /api/login     — Sign in with password`);
-  console.log(`   GET  /api/users     — List all users\n`);
 });

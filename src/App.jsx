@@ -159,6 +159,16 @@ function App() {
   allAvailableUsers.current = Array.from(userMap.values());
 
   // ── Handlers ──
+  // Fetch registered users from backend
+  const loadRegisteredUsers = useCallback(async () => {
+    try {
+      const users = await fetchAllUsers();
+      setRegisteredUsers(users);
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  }, []);
+
   // Fetch stored messages from backend
   const loadStoredMessages = useCallback(async () => {
     try {

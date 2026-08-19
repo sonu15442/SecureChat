@@ -1,6 +1,6 @@
 /**
  * API helper functions for SecureChat backend
- * Backend runs on the same origin via Vite proxy (/api → localhost:3001)
+ * Handles user registration, login, user directory, and chat message storage.
  * Includes graceful fallback to LocalStorage if backend server is offline.
  */
 
@@ -21,14 +21,6 @@ async function safeParseResponse(res) {
   }
 }
 
-// Simple browser-compatible SHA-256 password hash helper for offline fallback
-async function hashPasswordBrowser(password) {
-  const msgUint8 = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 // Offline LocalStorage DB Helpers
 function getOfflineUsersDB() {
   try {
@@ -42,15 +34,36 @@ function saveOfflineUsersDB(users) {
   localStorage.setItem('securechat_all_users_db', JSON.stringify(users));
 }
 
+function hashPasswordClient(password) {
+  // Simple client-side hash for offline mode (not cryptographically secure, but matches offline fallback pattern)
+  let hash = 0;
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return 'offline_hash_' + Math.abs(hash).toString(36);
+}
+
+function generateOfflinePassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let password = '';
+  for (let i = 0; i < 8; i++) {
+    password += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return password;
+}
+
 /**
- * Register a new account
+ * Register a new user with email and full name.
+ * Returns { success, user, password } — password is shown once.
  */
-export async function registerUser(username, password, fullName) {
+export async function registerUser(email, fullName) {
   try {
-    const res = await fetch(`${API_BASE}/register`, {
+    const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, fullName })
+      body: JSON.stringify({ email, fullName })
     });
 
     const data = await safeParseResponse(res);
@@ -62,48 +75,59 @@ export async function registerUser(username, password, fullName) {
     return data;
   } catch (err) {
     if (err.message !== 'BACKEND_OFFLINE' && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
-      // Re-throw genuine server error messages (e.g. "Username already taken")
       throw err;
     }
 
-    // ── Fallback: LocalStorage DB ──
-    const users = getOfflineUsersDB();
-    const normalizedUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    const userTag = `@${normalizedUsername}`;
+    // ── Offline Fallback ──
+    const cleanEmail = email.trim().toLowerCase();
 
-    if (users.some(u => u.username === userTag)) {
-      throw new Error('Username already taken. Please choose another.');
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      throw new Error('Invalid email address format.');
     }
 
-    const passwordHash = await hashPasswordBrowser(password);
-    const newUser = {
-      id: `user_${normalizedUsername}`,
-      name: fullName?.trim() || username,
+    if (!fullName || !fullName.trim()) {
+      throw new Error('Please enter your full name.');
+    }
+
+    const users = getOfflineUsersDB();
+    const existingUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+    if (existingUser) {
+      throw new Error('An account with this email already exists. Please sign in instead.');
+    }
+
+    const plainPassword = generateOfflinePassword();
+    const userTag = `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+
+    const user = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: fullName.trim(),
       username: userTag,
+      email: cleanEmail,
+      phone: '',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
-      bio: '🔒 Protected by SecureChat Guard | Online',
-      phone: '+1 (555) 019-8822',
+      bio: '🔒 Protected by SecureChat Guard',
       status: 'online',
-      passwordHash
+      passwordHash: hashPasswordClient(plainPassword)
     };
 
-    users.push(newUser);
+    users.push(user);
     saveOfflineUsersDB(users);
 
-    const { passwordHash: _, ...safeUser } = newUser;
-    return { user: safeUser };
+    const { passwordHash, ...safeUser } = user;
+    return { success: true, user: safeUser, password: plainPassword };
   }
 }
 
 /**
- * Login with username and password
+ * Login with email and password.
+ * Returns { success, user }
  */
-export async function loginUser(username, password) {
+export async function loginUser(email, password) {
   try {
-    const res = await fetch(`${API_BASE}/login`, {
+    const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ email, password })
     });
 
     const data = await safeParseResponse(res);
@@ -115,27 +139,25 @@ export async function loginUser(username, password) {
     return data;
   } catch (err) {
     if (err.message !== 'BACKEND_OFFLINE' && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
-      // Re-throw genuine server error messages (e.g. "Password is invalid")
       throw err;
     }
 
-    // ── Fallback: LocalStorage DB ──
+    // ── Offline Fallback ──
+    const cleanEmail = email.trim().toLowerCase();
     const users = getOfflineUsersDB();
-    const normalizedUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    const userTag = `@${normalizedUsername}`;
 
-    const user = users.find(u => u.username === userTag);
+    const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
     if (!user) {
-      throw new Error('Account not found. Please create an account first.');
+      throw new Error('No account found with this email. Please register first.');
     }
 
-    const attemptHash = await hashPasswordBrowser(password);
-    if (user.passwordHash && attemptHash !== user.passwordHash) {
-      throw new Error('Password is invalid. Please try again.');
+    const inputHash = hashPasswordClient(password.trim());
+    if (user.passwordHash !== inputHash) {
+      throw new Error('Incorrect password. Please try again.');
     }
 
-    const { passwordHash: _, ...safeUser } = user;
-    return { user: safeUser };
+    const { passwordHash, ...safeUser } = user;
+    return { success: true, user: safeUser };
   }
 }
 
@@ -153,9 +175,7 @@ export async function fetchAllUsers() {
 
     return data.users || [];
   } catch {
-    // ── Fallback: LocalStorage DB ──
-    const users = getOfflineUsersDB();
-    return users.map(({ passwordHash, ...safe }) => safe);
+    return getOfflineUsersDB();
   }
 }
 
@@ -173,7 +193,6 @@ export async function fetchStoredMessages() {
 
     return data.messages || [];
   } catch {
-    // ── Fallback: LocalStorage DB ──
     try {
       return JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
     } catch {
@@ -188,7 +207,6 @@ export async function fetchStoredMessages() {
 export async function saveStoredMessage(message) {
   if (!message || !message.id) return;
 
-  // Always sync to localStorage as offline safety net
   try {
     const localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
     const existingIdx = localMsgs.findIndex(m => m.id === message.id);
@@ -202,7 +220,6 @@ export async function saveStoredMessage(message) {
     console.error('LocalStorage message save error:', e);
   }
 
-  // Also send to backend
   try {
     await fetch(`${API_BASE}/messages`, {
       method: 'POST',
@@ -210,8 +227,6 @@ export async function saveStoredMessage(message) {
       body: JSON.stringify(message)
     });
   } catch {
-    // Backend offline — local storage fallback already handled
+    // Offline handled
   }
 }
-
-

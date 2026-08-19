@@ -1,64 +1,104 @@
-import { describe, it, expect, vi } from 'vitest';
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { describe, it, expect, vi } from 'vitest';
+import React from 'react';
 import AuthModal from './AuthModal';
 
-// Mock the API module
+// Mock API module
 vi.mock('../utils/api', () => ({
-  loginUser: vi.fn(async (username, password) => ({
-    user: {
-      id: `user_${username}`,
-      name: username,
-      username: `@${username}`,
-      avatar: 'test-avatar.jpg',
-      bio: 'test bio',
-      status: 'online'
+  registerUser: vi.fn(async (email, fullName) => {
+    if (!email || !email.trim()) {
+      throw new Error('Please enter a valid email address.');
     }
-  })),
-  registerUser: vi.fn(async (username, password, fullName) => ({
-    user: {
-      id: `user_${username}`,
-      name: fullName,
-      username: `@${username}`,
-      avatar: 'test-avatar.jpg',
-      bio: 'test bio',
-      status: 'online'
+    if (!fullName || !fullName.trim()) {
+      throw new Error('Please enter your full name.');
     }
-  }))
+    return {
+      success: true,
+      user: {
+        id: 'user_reg_123',
+        name: fullName,
+        username: `@${email.split('@')[0]}`,
+        email: email
+      },
+      password: 'xK9m2pQ7'
+    };
+  }),
+  loginUser: vi.fn(async (email, password) => {
+    if (password !== 'xK9m2pQ7') {
+      throw new Error('Incorrect password. Please try again.');
+    }
+    return {
+      success: true,
+      user: {
+        id: 'user_reg_123',
+        name: 'Alex Rivera',
+        username: `@${email.split('@')[0]}`
+      }
+    };
+  })
 }));
 
-describe('AuthModal Component', () => {
-  it('renders login header and input fields', () => {
-    render(<AuthModal onLogin={() => {}} />);
-    expect(screen.getByText(/SecureChat Login/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/alex_rivera/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/••••••••/i)).toBeInTheDocument();
+describe('AuthModal Component with Email + Password Flow', () => {
+  it('renders login form by default', () => {
+    const { container } = render(<AuthModal onLogin={() => {}} />);
+    expect(screen.getByText('SecureChat')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/alex@example.com/i)).toBeInTheDocument();
+    // Submit button is the one inside the form
+    const submitBtn = container.querySelector('form button[type="submit"]');
+    expect(submitBtn).toBeInTheDocument();
+    expect(submitBtn.textContent).toContain('Sign In');
   });
 
-  it('displays validation error if submitted empty', () => {
-    render(<AuthModal onLogin={() => {}} />);
-    const submitBtn = screen.getByRole('button', { name: /Sign In to SecureChat/i });
-    fireEvent.click(submitBtn);
-    expect(screen.getByText(/Please enter both username and password/i)).toBeInTheDocument();
+  it('validates empty email on login', async () => {
+    const { container } = render(<AuthModal onLogin={() => {}} />);
+    const form = container.querySelector('form');
+
+    fireEvent.submit(form);
+
+    expect(await screen.findByText('Please enter your email address.')).toBeInTheDocument();
   });
 
-  it('triggers onLogin when form is submitted with valid credentials', async () => {
+  it('switches to register tab and registers user', async () => {
+    render(<AuthModal onLogin={() => {}} />);
+
+    // Click Register tab
+    fireEvent.click(screen.getByText('Register'));
+
+    const emailInput = screen.getByPlaceholderText(/alex@example.com/i);
+    const nameInput = screen.getByPlaceholderText(/Alex Rivera/i);
+
+    fireEvent.change(emailInput, { target: { value: 'alex@example.com' } });
+    fireEvent.change(nameInput, { target: { value: 'Alex Rivera' } });
+
+    const form = document.querySelector('form');
+    fireEvent.submit(form);
+
+    // Should show generated password
+    await waitFor(() => {
+      expect(screen.getByText('Account Created!')).toBeInTheDocument();
+      expect(screen.getByText('xK9m2pQ7')).toBeInTheDocument();
+    });
+  });
+
+  it('logs in with correct password', async () => {
     const handleLogin = vi.fn();
-    render(<AuthModal onLogin={handleLogin} />);
-    
-    const usernameInput = screen.getByPlaceholderText(/alex_rivera/i);
-    const passwordInput = screen.getByPlaceholderText(/••••••••/i);
-    const submitBtn = screen.getByRole('button', { name: /Sign In to SecureChat/i });
+    const { container } = render(<AuthModal onLogin={handleLogin} />);
 
-    fireEvent.change(usernameInput, { target: { value: 'john_doe' } });
-    fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.click(submitBtn);
+    const emailInput = screen.getByPlaceholderText(/alex@example.com/i);
+    const passwordInput = screen.getByPlaceholderText(/Enter your password/i);
+
+    fireEvent.change(emailInput, { target: { value: 'alex@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'xK9m2pQ7' } });
+
+    const form = container.querySelector('form');
+    fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(handleLogin).toHaveBeenCalledTimes(1);
+      expect(handleLogin).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'user_reg_123',
+        name: 'Alex Rivera'
+      }));
     });
-    expect(handleLogin.mock.calls[0][0].username).toBe('@john_doe');
   });
 });
-
