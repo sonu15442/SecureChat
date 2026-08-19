@@ -213,7 +213,7 @@ app.post('/api/auth/reset-password', (req, res) => {
 
   const userIndex = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);
   if (userIndex === -1) {
-    return res.status(404).json({ error: 'No account found with this email address.' });
+    return res.status(404).json({ error: 'No account found with this email. Click "Register" to create a new account.' });
   }
 
   // Generate new permanent password

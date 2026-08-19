@@ -198,9 +198,21 @@ export default function AuthModal({ onLogin }) {
 
         {/* Error Message */}
         {error && (
-          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 flex items-center gap-2 animate-fade-in">
-            <ShieldAlert className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 flex flex-col gap-2 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+            {error.toLowerCase().includes('no account found') && (
+              <button
+                type="button"
+                onClick={() => switchTab('register')}
+                className="self-start mt-1 px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold rounded-lg text-[11px] transition-all flex items-center gap-1 shadow-sm"
+              >
+                <UserPlus className="w-3 h-3" />
+                Register New Account
+              </button>
+            )}
           </div>
         )}
 
