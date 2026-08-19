@@ -41,7 +41,13 @@ app.use((req, res, next) => {
 // Serve static frontend files from dist/
 const distPath = join(__dirname, 'dist');
 if (existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders: (res, path) => {
+      if (path.endsWith('.html') || path.endsWith('sw.js')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
 }
 
 // ── Helpers ──
@@ -271,6 +277,7 @@ app.post('/api/messages', (req, res) => {
 app.get('*', (req, res) => {
   const indexPath = join(distPath, 'index.html');
   if (existsSync(indexPath)) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(indexPath);
   } else {
     res.status(404).send('App not built yet. Run npm run build first.');
