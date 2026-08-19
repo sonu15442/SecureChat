@@ -162,6 +162,47 @@ export async function loginUser(email, password) {
 }
 
 /**
+ * Reset password for a given email address.
+ * Returns { success, password } — new permanent password shown once.
+ */
+export async function resetPassword(email) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+
+    const data = await safeParseResponse(res);
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Password reset failed.');
+    }
+
+    return data;
+  } catch (err) {
+    if (err.message !== 'BACKEND_OFFLINE' && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
+      throw err;
+    }
+
+    // ── Offline Fallback ──
+    const cleanEmail = email.trim().toLowerCase();
+    const users = getOfflineUsersDB();
+
+    const userIndex = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);
+    if (userIndex === -1) {
+      throw new Error('No account found with this email address.');
+    }
+
+    const newPassword = generateOfflinePassword();
+    users[userIndex].passwordHash = hashPasswordClient(newPassword);
+    saveOfflineUsersDB(users);
+
+    return { success: true, password: newPassword };
+  }
+}
+
+/**
  * Fetch all registered users
  */
 export async function fetchAllUsers() {

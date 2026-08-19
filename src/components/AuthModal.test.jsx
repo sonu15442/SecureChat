@@ -36,6 +36,15 @@ vi.mock('../utils/api', () => ({
         username: `@${email.split('@')[0]}`
       }
     };
+  }),
+  resetPassword: vi.fn(async (email) => {
+    if (!email || !email.trim()) {
+      throw new Error('Please enter your registered email address.');
+    }
+    return {
+      success: true,
+      password: 'newPassword123'
+    };
   })
 }));
 
@@ -99,6 +108,24 @@ describe('AuthModal Component with Email + Password Flow', () => {
         id: 'user_reg_123',
         name: 'Alex Rivera'
       }));
+    });
+  });
+
+  it('resets password when Forgot Password is clicked', async () => {
+    render(<AuthModal onLogin={() => {}} />);
+
+    // Click Forgot Password?
+    fireEvent.click(screen.getByText('Forgot Password?'));
+
+    const emailInput = screen.getByPlaceholderText(/alex@example.com/i);
+    fireEvent.change(emailInput, { target: { value: 'alex@example.com' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Generate New Password/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('New Password Generated!')).toBeInTheDocument();
+      expect(screen.getByText('newPassword123')).toBeInTheDocument();
     });
   });
 });

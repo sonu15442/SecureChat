@@ -196,6 +196,42 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 /**
+ * POST /api/auth/reset-password
+ * Body: { email }
+ * Resets the user's password and generates a new permanent password.
+ * Returns: { success: true, password: newPassword }
+ */
+app.post('/api/auth/reset-password', (req, res) => {
+  const { email } = req.body;
+
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Please enter your registered email address.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const users = loadUsers();
+
+  const userIndex = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'No account found with this email address.' });
+  }
+
+  // Generate new permanent password
+  const newPassword = generatePassword();
+  const hashedPassword = hashPassword(newPassword);
+
+  users[userIndex].passwordHash = hashedPassword;
+  users[userIndex].updatedAt = new Date().toISOString();
+  saveUsers(users);
+
+  res.status(200).json({
+    success: true,
+    message: 'Your password has been reset successfully.',
+    password: newPassword
+  });
+});
+
+/**
  * GET /api/users
  */
 app.get('/api/users', (req, res) => {
