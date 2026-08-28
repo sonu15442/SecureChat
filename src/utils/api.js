@@ -203,6 +203,19 @@ export async function resetPassword(email) {
 }
 
 /**
+ * Clear all local storage database entries
+ */
+export function clearAllDatabaseData() {
+  try {
+    localStorage.removeItem('securechat_user');
+    localStorage.removeItem('securechat_all_users_db');
+    localStorage.removeItem('securechat_all_messages');
+  } catch (e) {
+    console.error('Error clearing local database:', e);
+  }
+}
+
+/**
  * Fetch all registered users
  */
 export async function fetchAllUsers() {
@@ -214,7 +227,9 @@ export async function fetchAllUsers() {
       throw new Error(data.error || 'Failed to fetch users.');
     }
 
-    return data.users || [];
+    const users = data.users || [];
+    saveOfflineUsersDB(users);
+    return users;
   } catch {
     return getOfflineUsersDB();
   }
@@ -232,7 +247,9 @@ export async function fetchStoredMessages() {
       throw new Error(data.error || 'Failed to fetch messages.');
     }
 
-    return data.messages || [];
+    const messages = data.messages || [];
+    localStorage.setItem('securechat_all_messages', JSON.stringify(messages));
+    return messages;
   } catch {
     try {
       return JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');

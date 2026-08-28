@@ -6,16 +6,32 @@ import VoiceCallModal from './components/VoiceCallModal';
 import VideoCallModal from './components/VideoCallModal';
 import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
+import StatusModal from './components/StatusModal';
+import StatusViewerModal from './components/StatusViewerModal';
 import { DEFAULT_SETTINGS } from './utils/initialData';
 import { initChannel, destroyChannel, broadcastMessage, broadcastReadReceipt, on } from './utils/realtimeChannel';
-import { fetchAllUsers, fetchStoredMessages, saveStoredMessage } from './utils/api';
+import { fetchAllUsers, fetchStoredMessages, saveStoredMessage, clearAllDatabaseData } from './utils/api';
+import { getActiveStatuses } from './utils/statusManager';
 
 function App() {
   // ── Auth ──
   const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('securechat_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('securechat_user');
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (parsed && typeof parsed === 'object' && parsed.id && parsed.name) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   });
+
+  // ── Statuses & Music Stories State ──
+  const [statuses, setStatuses] = useState(() => getActiveStatuses());
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [activeStatusViewerGroup, setActiveStatusViewerGroup] = useState(null);
 
   // ── Registered Users Directory (fetched from backend) ──
   const [registeredUsers, setRegisteredUsers] = useState([]);
@@ -112,9 +128,18 @@ function App() {
       }));
     });
 
-    // Listen for presence changes
+    // Listen for presence changes & auto-upgrade sent messages to delivered for online users
     const unsub3 = on('presence', (users) => {
       setOnlineUsers(users);
+      const onlineIds = users.map(u => u.id);
+      setMessages(prev => prev.map(m => {
+        if (m.senderId === currentUser.id && m.status === 'sent') {
+          if (m.recipientId === 'global' || onlineIds.includes(m.recipientId)) {
+            return { ...m, status: 'delivered' };
+          }
+        }
+        return m;
+      }));
     });
 
     // Listen for user joined
@@ -135,11 +160,19 @@ function App() {
     };
   }, [currentUser]);
 
-  // Announce departure on tab close
+  // Announce departure on tab close & periodically clean up expired 24h statuses
   useEffect(() => {
     const handleUnload = () => destroyChannel();
     window.addEventListener('beforeunload', handleUnload);
-    return () => window.removeEventListener('beforeunload', handleUnload);
+
+    const statusTimer = setInterval(() => {
+      setStatuses(getActiveStatuses());
+    }, 60000); // Auto-purge expired 24h statuses every minute
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      clearInterval(statusTimer);
+    };
   }, []);
 
   // Combine registered users & online users
@@ -197,10 +230,16 @@ function App() {
     loadStoredMessages();
   };
 
+  const handleUpdateUser = (updatedUser) => {
+    setCurrentUser(updatedUser);
+    localStorage.setItem('securechat_user', JSON.stringify(updatedUser));
+  };
+
   const handleLogout = () => {
     destroyChannel();
-    localStorage.removeItem('securechat_user');
+    clearAllDatabaseData();
     setCurrentUser(null);
+    setRegisteredUsers([]);
     setMessages([]);
     setOnlineUsers([]);
     setShowSettings(false);
@@ -241,6 +280,15 @@ function App() {
     const imageUrl = typeof msgPayload === 'object' ? msgPayload.imageUrl : null;
     const recipientId = activeChatTarget && activeChatTarget !== 'global' ? activeChatTarget.id : 'global';
 
+    // Determine initial status: if recipient is online (or in global chat with online users), set 'delivered' (double ticks)
+    let initialStatus = 'sent';
+    if (recipientId === 'global') {
+      initialStatus = onlineUsers.length > 0 ? 'delivered' : 'sent';
+    } else {
+      const isRecipientOnline = onlineUsers.some(u => u.id === recipientId);
+      initialStatus = isRecipientOnline ? 'delivered' : 'sent';
+    }
+
     const newMsg = {
       id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       senderId: currentUser.id,
@@ -250,13 +298,13 @@ function App() {
       text: messageText,
       imageUrl,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sent'
+      status: initialStatus
     };
 
     setMessages(prev => [...prev, newMsg]);
     broadcastMessage(newMsg);
     saveStoredMessage(newMsg);
-  }, [currentUser, activeChatTarget]);
+  }, [currentUser, activeChatTarget, onlineUsers]);
 
   const handleOpenLinkModal = useCallback((linkData) => {
     setLinkModalData(linkData);
@@ -303,6 +351,9 @@ function App() {
           onCloseMobile={() => setShowMobileSidebar(false)}
           canInstallApp={!!deferredPrompt}
           onInstallApp={handleInstallApp}
+          statuses={statuses}
+          onOpenStatusModal={() => { setShowStatusModal(true); setShowMobileSidebar(false); }}
+          onOpenStatusViewer={(group) => { setActiveStatusViewerGroup(group); setShowMobileSidebar(false); }}
         />
       </div>
 
@@ -322,6 +373,29 @@ function App() {
       />
 
       {/* ── Modals ── */}
+      {showStatusModal && (
+        <StatusModal
+          currentUser={currentUser}
+          onClose={() => setShowStatusModal(false)}
+          onStatusCreated={() => setStatuses(getActiveStatuses())}
+        />
+      )}
+
+      {activeStatusViewerGroup && (
+        <StatusViewerModal
+          statusGroup={activeStatusViewerGroup}
+          currentUserId={currentUser?.id}
+          allUsers={allAvailableUsers.current || registeredUsers}
+          onDeleteStatus={(_statusId) => {
+            setStatuses(getActiveStatuses());
+          }}
+          onClose={() => {
+            setActiveStatusViewerGroup(null);
+            setStatuses(getActiveStatuses());
+          }}
+        />
+      )}
+
       {linkModalData && (
         <LinkRiskModal
           linkData={linkModalData}
@@ -346,7 +420,7 @@ function App() {
           settings={settings}
           onUpdateSettings={setSettings}
           currentUser={currentUser}
-          onUpdateUser={setCurrentUser}
+          onUpdateUser={handleUpdateUser}
           onLogout={handleLogout}
           onClose={() => setShowSettings(false)}
           canInstallApp={!!deferredPrompt}

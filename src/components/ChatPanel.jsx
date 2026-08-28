@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, CheckCheck, Clock, Lock, X, Users, Search, MessageCircle, ArrowLeft } from 'lucide-react';
+import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, CheckCheck, Lock, X, Users, Search, MessageCircle, ArrowLeft } from 'lucide-react';
 import { extractUrls, analyzeUrl } from '../utils/linkDetector';
 import { EMOJI_CATEGORIES } from '../utils/initialData';
 import { broadcastTyping, on } from '../utils/realtimeChannel';
@@ -200,13 +200,24 @@ export default function ChatPanel({
   const getStatusIcon = (status) => {
     switch (status) {
       case 'read':
-        return <CheckCheck className="w-4 h-4 text-sky-400" />;
+        return (
+          <span className="inline-flex items-center" title="Read / Seen (Blue Double Ticks)">
+            <CheckCheck className="w-4 h-4 blue-tick-glow stroke-[2.5]" />
+          </span>
+        );
       case 'delivered':
-        return <CheckCheck className="w-4 h-4 text-[var(--text-secondary)]" />;
+        return (
+          <span className="inline-flex items-center" title="Delivered / Recipient Online (Gray Double Ticks)">
+            <CheckCheck className="w-4 h-4 text-slate-300 stroke-[2.2]" />
+          </span>
+        );
       case 'sent':
-        return <Check className="w-4 h-4 text-[var(--text-secondary)]" />;
       default:
-        return <Clock className="w-3.5 h-3.5 text-[var(--text-secondary)]" />;
+        return (
+          <span className="inline-flex items-center" title="Sent / Recipient Offline (Single Gray Tick)">
+            <Check className="w-4 h-4 text-slate-400 stroke-[2]" />
+          </span>
+        );
     }
   };
 
@@ -226,30 +237,30 @@ export default function ChatPanel({
     <div className="flex-1 flex flex-col h-full bg-[var(--bg-primary)]">
 
       {/* ── Chat Header ── */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-color)] bg-[#0d1622]/90 backdrop-blur-xl">
         <div className="flex items-center gap-3">
           {/* Mobile drawer toggle button */}
           <button
             onClick={onToggleMobileSidebar}
-            className="md:hidden p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
+            className="md:hidden p-2 text-cyan-400 hover:bg-cyan-500/10 rounded-xl transition"
             title="Open Online Users"
           >
-            <Users className="w-5 h-5 text-[var(--bg-accent)]" />
+            <Users className="w-5 h-5" />
           </button>
 
           {isGlobal ? (
             <>
-              <div className="p-2 rounded-xl bg-[var(--bg-accent)]/10">
-                <ShieldCheck className="w-6 h-6 text-[var(--bg-accent)]" />
+              <div className="p-2.5 rounded-2xl bg-gradient-to-br from-cyan-500/20 via-purple-500/20 to-pink-500/20 border border-cyan-400/40 shadow-lg shadow-cyan-500/10">
+                <ShieldCheck className="w-6 h-6 text-cyan-400 animate-pulse" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
-                  SecureChat Global Room
-                  <Lock className="w-3.5 h-3.5 text-[var(--bg-accent)]" />
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <span className="gradient-text-rainbow">SecureChat Global Room</span>
+                  <Lock className="w-3.5 h-3.5 text-cyan-400" />
                 </h2>
-                <p className="text-[12px] text-[var(--text-secondary)] flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  {totalOnline} {totalOnline === 1 ? 'user' : 'users'} online
+                <p className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+                  <Users className="w-3 h-3 text-purple-400" />
+                  <span className="text-emerald-400 font-bold">{totalOnline}</span> {totalOnline === 1 ? 'user' : 'users'} online
                 </p>
               </div>
             </>
@@ -257,42 +268,42 @@ export default function ChatPanel({
             <div className="flex items-center gap-3">
               <button
                 onClick={() => onSelectChatTarget('global')}
-                className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
                 title="Back to Global Room"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
 
-              <div className="relative">
+              <div className="relative p-0.5 rounded-full bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 shadow-md">
                 <img
                   src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
                   alt={targetUser?.name}
-                  className="w-9 h-9 rounded-full object-cover ring-2 ring-[var(--bg-accent)]/40"
+                  className="w-9 h-9 rounded-full object-cover border-2 border-[#0d1622]"
                 />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
+                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
               </div>
 
               <div>
-                <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
-                  {targetUser?.name}
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <span>{targetUser?.name}</span>
                   <Lock className="w-3.5 h-3.5 text-emerald-400" />
                 </h2>
-                <p className="text-[11px] text-emerald-400 flex items-center gap-1">
+                <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
                   <span>Direct Encrypted Chat</span>
-                  {targetUser?.username && <span className="text-[var(--text-secondary)] font-normal">• @{targetUser.username}</span>}
+                  {targetUser?.username && <span className="text-purple-300 font-normal">• @{targetUser.username}</span>}
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           {!isGlobal && (
             <button
               onClick={() => onSelectChatTarget('global')}
-              className="hidden sm:flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[var(--bg-accent)] bg-[var(--bg-accent)]/10 hover:bg-[var(--bg-accent)]/20 rounded-xl transition mr-1"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-cyan-300 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 border border-cyan-400/40 hover:brightness-125 rounded-xl transition mr-1 shadow-sm"
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5 text-cyan-400" />
               Global Chat
             </button>
           )}
@@ -301,31 +312,31 @@ export default function ChatPanel({
           <button
             id="search-toggle-btn"
             onClick={() => setShowSearchHeader(!showSearchHeader)}
-            className={`p-2.5 rounded-xl transition ${
+            className={`p-2.5 rounded-xl transition-all border ${
               showSearchHeader
-                ? 'text-[var(--bg-accent)] bg-[var(--bg-accent)]/10'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+                ? 'text-cyan-300 bg-cyan-500/20 border-cyan-400/50 shadow-md'
+                : 'text-slate-300 bg-slate-800/60 border-slate-700/60 hover:bg-slate-700/80 hover:text-white'
             }`}
             title="Search Users & Messages"
           >
-            <Search className="w-5 h-5" />
+            <Search className="w-4 h-4 text-emerald-400" />
           </button>
 
           <button
             id="voice-call-btn"
             onClick={onOpenVoiceCall}
-            className="p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
+            className="p-2.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 rounded-xl transition shadow-sm hover:scale-105"
             title="Voice Call"
           >
-            <Phone className="w-5 h-5" />
+            <Phone className="w-4 h-4" />
           </button>
           <button 
             id="video-call-btn"
             onClick={onOpenVideoCall}
-            className="p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition" 
+            className="p-2.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-400 rounded-xl transition shadow-sm hover:scale-105" 
             title="HD Video Call"
           >
-            <Video className="w-5 h-5" />
+            <Video className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -492,16 +503,32 @@ export default function ChatPanel({
 
       {/* ── Messages Area ── */}
       <div className="flex-1 overflow-y-auto px-4 py-4 chat-bg-pattern">
-        <div className="flex justify-center mb-6">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/5 border border-amber-500/10 rounded-lg text-[11px] text-amber-300/70">
-            <Lock className="w-3 h-3" />
-            {isGlobal 
-              ? 'Global Room: End-to-end encrypted. All links are auto-scanned for threats.'
-              : `Private 1-on-1 Chat with ${targetUser?.name}: Encrypted end-to-end.`}
+        {/* Encryption & Tick Legend Banner */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 font-medium">
+            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>
+              {isGlobal 
+                ? 'Global Room • End-to-End Encrypted'
+                : `Encrypted 1-on-1 Chat with ${targetUser?.name}`}
+            </span>
+          </div>
+
+          {/* Tick Status Legend */}
+          <div className="flex items-center gap-3 px-3 py-1.5 bg-gray-900/80 border border-gray-800 rounded-xl text-[10px] text-gray-300 font-medium shadow-sm">
+            <span className="flex items-center gap-1" title="Sent to offline user">
+              <Check className="w-3 h-3 text-slate-400" /> Sent
+            </span>
+            <span className="flex items-center gap-1" title="Delivered (Recipient is Online)">
+              <CheckCheck className="w-3 h-3 text-slate-300 font-semibold" /> Delivered (Online)
+            </span>
+            <span className="flex items-center gap-1 font-bold text-sky-400" title="Read / Seen by recipient">
+              <CheckCheck className="w-3 h-3 blue-tick-glow" /> Read (Seen)
+            </span>
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {displayedMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <MessageCircle className="w-12 h-12 text-[var(--bg-accent)]/30 mb-3 animate-pulse" />
@@ -518,7 +545,7 @@ export default function ChatPanel({
               if (msg.type === 'system') {
                 return (
                   <div key={msg.id || idx} className="flex justify-center animate-message">
-                    <span className="text-[11px] text-[var(--text-secondary)] bg-[var(--bg-tertiary)] px-3 py-1 rounded-full">
+                    <span className="text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-500/20 px-3.5 py-1 rounded-full font-medium shadow-sm">
                       {msg.text}
                     </span>
                   </div>
@@ -534,23 +561,27 @@ export default function ChatPanel({
                 >
                   {/* Other user's avatar */}
                   {!isMe && (
-                    <img
-                      src={msg.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                      alt={msg.senderName}
-                      className="w-8 h-8 rounded-full object-cover mr-2 mt-1 shrink-0"
-                    />
+                    <div className="relative p-0.5 rounded-full bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 mr-2.5 mt-1 shrink-0 shadow-md">
+                      <img
+                        src={msg.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                        alt={msg.senderName}
+                        className="w-8 h-8 rounded-full object-cover border border-[#0d1622]"
+                      />
+                    </div>
                   )}
 
                   <div
-                    className={`relative max-w-[70%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                    className={`relative max-w-[82%] sm:max-w-[72%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-xl transition-all ${
                       isMe
-                        ? 'bg-[var(--msg-out-bg)] text-[var(--text-primary)] rounded-br-md'
-                        : 'bg-[var(--msg-in-bg)] text-[var(--text-primary)] rounded-bl-md'
+                        ? 'bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 text-white rounded-br-xs border border-cyan-300/30 shadow-cyan-950/40'
+                        : 'bg-gradient-to-r from-[#162338] via-[#1a2942] to-[#131d2e] text-slate-100 rounded-bl-xs border border-indigo-500/30 shadow-indigo-950/40'
                     }`}
                   >
                     {/* Sender name for group/private chat */}
                     {!isMe && msg.senderName && (
-                      <p className="text-[11px] font-bold text-[var(--bg-accent)] mb-1">{msg.senderName}</p>
+                      <p className="text-[11px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 mb-1 flex items-center gap-1">
+                        <span>{msg.senderName}</span>
+                      </p>
                     )}
 
                     {/* Photo Attachment */}
@@ -672,10 +703,10 @@ export default function ChatPanel({
         <div className="flex items-end gap-2">
           <button
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className={`p-2.5 rounded-xl transition shrink-0 ${
+            className={`p-2.5 rounded-xl transition shrink-0 border ${
               showEmojiPicker
-                ? 'text-[var(--bg-accent)] bg-[var(--bg-accent)]/10'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+                ? 'text-cyan-300 bg-cyan-500/20 border-cyan-400/50 shadow-md'
+                : 'text-purple-400 bg-slate-800/60 border-slate-700/60 hover:bg-purple-500/15 hover:border-purple-400/40'
             }`}
             title="Emoji"
           >
@@ -692,7 +723,7 @@ export default function ChatPanel({
           />
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition shrink-0" 
+            className="p-2.5 text-cyan-400 bg-slate-800/60 border border-slate-700/60 hover:bg-cyan-500/15 hover:border-cyan-400/40 rounded-xl transition shrink-0" 
             title="Attach Photo / File"
           >
             <Paperclip className="w-5 h-5" />
@@ -707,7 +738,7 @@ export default function ChatPanel({
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
-              className="w-full bg-[var(--bg-tertiary)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] text-sm px-4 py-2.5 rounded-xl border border-transparent focus:border-[var(--bg-accent)]/30 focus:outline-none resize-none max-h-32 transition-colors"
+              className="w-full bg-[#111c29]/90 text-white placeholder:text-slate-500 text-sm px-4 py-2.5 rounded-2xl border border-slate-700/80 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 focus:outline-none resize-none max-h-32 transition-all shadow-inner"
               style={{ minHeight: '42px' }}
             />
           </div>
@@ -716,10 +747,10 @@ export default function ChatPanel({
             id="send-btn"
             onClick={handleSend}
             disabled={!inputText.trim() && !selectedImage}
-            className={`p-2.5 rounded-xl transition-all shrink-0 ${
+            className={`p-2.5 rounded-xl transition-all duration-200 shrink-0 ${
               inputText.trim() || selectedImage
-                ? 'bg-[var(--bg-accent)] text-white hover:bg-[var(--bg-accent-hover)] shadow-lg shadow-[var(--bg-accent)]/25 active:scale-95'
-                : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] cursor-not-allowed'
+                ? 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/30 hover:brightness-110 active:scale-95 font-bold'
+                : 'bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed'
             }`}
             title="Send"
           >

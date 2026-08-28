@@ -51,7 +51,7 @@ vi.mock('../utils/api', () => ({
 describe('AuthModal Component with Email + Password Flow', () => {
   it('renders login form by default', () => {
     const { container } = render(<AuthModal onLogin={() => {}} />);
-    expect(screen.getByText('SecureChat')).toBeInTheDocument();
+    expect(screen.getByText(/SecureChat/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/alex@example.com/i)).toBeInTheDocument();
     // Submit button is the one inside the form
     const submitBtn = container.querySelector('form button[type="submit"]');

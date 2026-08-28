@@ -1,15 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X, Shield, Lock, Bell, Eye, Globe,
-  ShieldCheck, Zap, Code2, Heart, ToggleLeft, ToggleRight, Camera, Download
+  ShieldCheck, Zap, Code2, Heart, ToggleLeft, ToggleRight, Camera, Download, Upload, Image as ImageIcon, CheckCircle2, Trash2
 } from 'lucide-react';
 import { PRESET_AVATARS } from '../utils/initialData';
 
 export default function SettingsPanel({ settings, onUpdateSettings, currentUser, onUpdateUser, onLogout, onClose, canInstallApp, onInstallApp }) {
   const [activeSection, setActiveSection] = useState('security');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-  const [editName, setEditName] = useState(currentUser.name);
-  const [editBio, setEditBio] = useState(currentUser.bio);
+  const [editName, setEditName] = useState(currentUser?.name || '');
+  const [editBio, setEditBio] = useState(currentUser?.bio || '');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleDeviceFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (JPEG, PNG, WEBP, GIF).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height *= MAX_DIM / width;
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width *= MAX_DIM / height;
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        onUpdateUser({ ...currentUser, avatar: dataUrl });
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2500);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const Toggle = ({ enabled, onToggle }) => (
     <button onClick={onToggle} className="transition-colors">
@@ -30,6 +77,15 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+      {/* Hidden File Input for Uploading Profile Photo from Device */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={handleDeviceFileUpload}
+      />
+
       <div className="w-full max-w-2xl glass-modal rounded-2xl shadow-2xl overflow-hidden border border-gray-700/50 flex flex-col max-h-[85vh]">
 
         {/* Header */}
@@ -131,6 +187,21 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                       ))}
                     </div>
                   </div>
+
+                  <div className="pt-3 border-t border-[var(--border-color)]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete all local user accounts & cached data?')) {
+                          onLogout();
+                        }
+                      }}
+                      className="w-full py-2.5 px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-semibold rounded-xl text-xs transition flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Delete All Local Accounts & Clear Data</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -175,37 +246,62 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                   Edit Profile
                 </h3>
 
-                {/* Avatar Picker */}
-                <div className="flex items-center gap-4">
-                  <div className="relative group">
-                    <img
-                      src={currentUser.avatar}
-                      alt="Your avatar"
-                      className="w-20 h-20 rounded-full object-cover ring-2 ring-[var(--bg-accent)]/30"
-                    />
-                    <button
-                      onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-                      className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                    >
-                      <Camera className="w-5 h-5 text-white" />
-                    </button>
+                {/* Avatar & Device Upload Section */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-[var(--bg-tertiary)]/60 rounded-2xl border border-[var(--border-color)]">
+                  <div className="flex items-center gap-4">
+                    <div className="relative group shrink-0">
+                      <img
+                        src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                        alt="Your avatar"
+                        className="w-20 h-20 rounded-full object-cover ring-4 ring-[var(--bg-accent)]/30 shadow-md"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-200"
+                        title="Upload picture from device"
+                      >
+                        <Camera className="w-6 h-6 text-white" />
+                      </button>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-[var(--text-primary)]">{currentUser?.name || 'User'}</p>
+                      <p className="text-xs text-[var(--bg-accent)] font-medium mb-1">{currentUser?.username || '@user'}</p>
+                      <p className="text-[11px] text-[var(--text-secondary)]">Click photo or use button to upload from device</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[var(--text-primary)]">{currentUser.name}</p>
-                    <p className="text-xs text-[var(--text-secondary)]">{currentUser.username}</p>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3.5 py-2 bg-[var(--bg-accent)] hover:bg-[var(--bg-accent-hover)] text-white text-xs font-bold rounded-xl transition flex items-center gap-2 shadow-md shadow-[var(--bg-accent)]/20"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Upload from Device</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAvatarPicker(!showAvatarPicker)}
+                      className="px-3.5 py-2 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-xs font-semibold rounded-xl border border-[var(--border-color)] transition flex items-center gap-1.5"
+                    >
+                      <ImageIcon className="w-4 h-4 text-[var(--text-secondary)]" />
+                      <span>Presets</span>
+                    </button>
                   </div>
                 </div>
 
                 {showAvatarPicker && (
-                  <div className="p-3 bg-[var(--bg-tertiary)] rounded-xl">
-                    <p className="text-xs text-[var(--text-secondary)] mb-2">Choose an avatar</p>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="p-3.5 bg-[var(--bg-tertiary)] rounded-2xl border border-[var(--border-color)] animate-fade-in">
+                    <p className="text-xs text-[var(--text-secondary)] mb-2 font-medium">Select a Preset Avatar:</p>
+                    <div className="flex flex-wrap gap-2.5">
                       {PRESET_AVATARS.map((avatar, i) => (
                         <button
                           key={i}
+                          type="button"
                           onClick={() => { onUpdateUser({ ...currentUser, avatar }); setShowAvatarPicker(false); }}
-                          className={`w-12 h-12 rounded-full overflow-hidden border-2 transition hover:scale-110 ${
-                            currentUser.avatar === avatar ? 'border-[var(--bg-accent)]' : 'border-transparent'
+                          className={`w-12 h-12 rounded-full overflow-hidden border-2 transition-all hover:scale-110 ${
+                            currentUser?.avatar === avatar ? 'border-[var(--bg-accent)] ring-2 ring-[var(--bg-accent)]/50' : 'border-transparent opacity-80 hover:opacity-100'
                           }`}
                         >
                           <img src={avatar} alt={`Avatar ${i + 1}`} className="w-full h-full object-cover" />
@@ -235,10 +331,21 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                     />
                   </div>
                   <button
-                    onClick={() => onUpdateUser({ ...currentUser, name: editName, bio: editBio })}
-                    className="px-5 py-2 bg-[var(--bg-accent)] text-white text-sm font-semibold rounded-xl hover:bg-[var(--bg-accent-hover)] transition shadow-lg shadow-[var(--bg-accent)]/20"
+                    onClick={() => {
+                      onUpdateUser({ ...currentUser, name: editName, bio: editBio });
+                      setSaveSuccess(true);
+                      setTimeout(() => setSaveSuccess(false), 2500);
+                    }}
+                    className="px-5 py-2.5 bg-[var(--bg-accent)] text-white text-sm font-semibold rounded-xl hover:bg-[var(--bg-accent-hover)] transition shadow-lg shadow-[var(--bg-accent)]/20 flex items-center gap-2"
                   >
-                    Save Changes
+                    {saveSuccess ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-white animate-fade-in" />
+                        <span>Saved Successfully!</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
                   </button>
                 </div>
               </div>

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Shield, Settings, LogOut, ChevronDown, MessageSquare, Wifi, Download, X, Search, UserCheck, MessageCircle } from 'lucide-react';
+import { Shield, Settings, LogOut, ChevronDown, MessageSquare, Wifi, Download, X, Search, UserCheck, MessageCircle, Plus, Sparkles, Music } from 'lucide-react';
+import { groupStatusesByUser } from '../utils/statusManager';
+import { resumeAudioContext } from '../utils/statusAudioPlayer';
 
 export default function Sidebar({
   allUsers = [],
@@ -12,13 +14,21 @@ export default function Sidebar({
   onLogout,
   onCloseMobile,
   canInstallApp,
-  onInstallApp
+  onInstallApp,
+  statuses = [],
+  onOpenStatusModal,
+  onOpenStatusViewer
 }) {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserModal, setSelectedUserModal] = useState(null);
 
   const query = searchQuery.toLowerCase().trim();
+
+  // Group active statuses by user
+  const statusGroups = groupStatusesByUser(statuses);
+  const myStatusGroup = statusGroups.find(g => g.userId === currentUser?.id);
+  const otherStatusGroups = statusGroups.filter(g => g.userId !== currentUser?.id);
 
   // Combine user directory
   const usersList = allUsers.length > 0 ? allUsers : onlineUsers;
@@ -41,44 +51,62 @@ export default function Sidebar({
     <div className="w-[320px] max-w-[85vw] h-full flex flex-col border-r border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-2xl md:shadow-none">
 
       {/* ── Top Bar ── */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-color)]">
-        <div className="relative">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-color)] bg-[#0a111a]/80 backdrop-blur-md">
+        <div className="relative flex-1 flex items-center justify-between">
           <button
             id="profile-toggle"
             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-            className="flex items-center gap-2.5 hover:bg-[var(--bg-tertiary)] rounded-xl px-2 py-1.5 transition-colors"
+            className="flex items-center gap-2 hover:bg-slate-800/50 rounded-2xl px-2 py-1.5 transition-all group max-w-[210px]"
           >
-            <img
-              src={currentUser.avatar}
-              alt={currentUser.name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-[var(--bg-accent)]/40"
-            />
-            <div className="text-left">
-              <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight">{currentUser.name}</p>
-              <p className="text-[11px] text-[var(--text-accent)] font-medium">{currentUser.username}</p>
+            <div className="relative p-0.5 rounded-full bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 shadow-md shrink-0">
+              <img
+                src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                alt={currentUser?.name || 'User'}
+                className="w-9 h-9 rounded-full object-cover border-2 border-[#0d1622] group-hover:scale-105 transition-transform"
+              />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full status-online" />
             </div>
-            <ChevronDown className={`w-4 h-4 text-[var(--text-secondary)] transition-transform ${showProfileDropdown ? 'rotate-180' : ''}`} />
+            <div className="text-left min-w-0 flex-1">
+              <p className="text-xs font-extrabold text-white leading-tight truncate">{currentUser?.name || 'User'}</p>
+              <p className="text-[10px] font-semibold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 truncate">
+                {currentUser?.username || '@user'}
+              </p>
+            </div>
+            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${showProfileDropdown ? 'rotate-180 text-cyan-400' : ''}`} />
+          </button>
+
+          {/* Direct Visible Settings Icon Button */}
+          <button
+            onClick={() => {
+              if (onOpenSettings) onOpenSettings();
+              setShowProfileDropdown(false);
+            }}
+            className="p-2 text-cyan-400 hover:text-white bg-slate-900/90 hover:bg-cyan-500/20 border border-cyan-500/40 rounded-xl transition shadow-md flex items-center justify-center gap-1 shrink-0 ml-1 hover:scale-105 active:scale-95"
+            title="Open Settings & Preferences"
+          >
+            <Settings className="w-4 h-4 text-cyan-400" />
           </button>
 
           {/* Profile Dropdown */}
           {showProfileDropdown && (
-            <div className="absolute top-full left-0 mt-1 w-56 glass-modal rounded-xl shadow-2xl z-50 animate-slide-up border border-[var(--border-color)]">
-              <div className="p-3 border-b border-[var(--border-color)]">
-                <p className="text-xs text-[var(--text-secondary)]">Signed in as</p>
-                <p className="text-sm font-semibold text-[var(--text-primary)]">{currentUser.name}</p>
+            <div className="absolute top-full left-0 mt-2 w-60 glass-modal rounded-2xl shadow-2xl z-50 animate-slide-up border border-cyan-500/20 overflow-hidden">
+              <div className="p-3.5 border-b border-slate-800 bg-gradient-to-r from-cyan-500/10 via-purple-500/10 to-pink-500/10">
+                <p className="text-[10px] uppercase tracking-wider font-bold text-cyan-400">Signed in as</p>
+                <p className="text-sm font-extrabold text-white truncate">{currentUser?.name}</p>
+                <p className="text-xs text-purple-300 truncate">{currentUser?.email || currentUser?.username}</p>
               </div>
-              <div className="p-1.5">
+              <div className="p-2 space-y-1">
                 <button
                   onClick={() => { onOpenSettings(); setShowProfileDropdown(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-lg transition"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-cyan-500/10 hover:text-cyan-300 rounded-xl transition"
                 >
-                  <Settings className="w-4 h-4 text-[var(--text-secondary)]" />
-                  Settings
+                  <Settings className="w-4 h-4 text-cyan-400" />
+                  Settings & Preferences
                 </button>
                 {canInstallApp && (
                   <button
                     onClick={() => { onInstallApp(); setShowProfileDropdown(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[var(--bg-accent)] hover:bg-[var(--bg-tertiary)] rounded-lg transition"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/10 rounded-xl transition"
                   >
                     <Download className="w-4 h-4" />
                     Install App
@@ -86,7 +114,7 @@ export default function Sidebar({
                 )}
                 <button 
                   onClick={() => { if (onLogout) onLogout(); setShowProfileDropdown(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 rounded-xl transition"
                 >
                   <LogOut className="w-4 h-4" />
                   Sign Out
@@ -100,7 +128,7 @@ export default function Sidebar({
         {onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="md:hidden p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
+            className="md:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -113,28 +141,32 @@ export default function Sidebar({
           if (onSelectChatTarget) onSelectChatTarget('global');
           if (onCloseMobile) onCloseMobile();
         }}
-        className={`mx-3 mt-3 mb-2 px-3 py-2.5 rounded-xl flex items-center justify-between cursor-pointer transition border ${
+        className={`mx-3 mt-3 mb-2 px-3.5 py-3 rounded-2xl flex items-center justify-between cursor-pointer transition-all duration-300 border ${
           isGlobalActive
-            ? 'bg-[var(--bg-accent)]/15 border-[var(--bg-accent)]/40 shadow-sm'
-            : 'bg-[var(--bg-tertiary)]/50 border-transparent hover:bg-[var(--bg-tertiary)]'
+            ? 'bg-gradient-to-r from-cyan-500/25 via-purple-500/20 to-pink-500/15 border-cyan-400/50 shadow-lg shadow-cyan-500/20 scale-[1.02]'
+            : 'bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/30 hover:bg-slate-800/60'
         }`}
       >
-        <div className="flex items-center gap-2.5">
-          <MessageSquare className={`w-4 h-4 ${isGlobalActive ? 'text-[var(--bg-accent)]' : 'text-[var(--text-secondary)]'}`} />
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-xl ${isGlobalActive ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-md' : 'bg-slate-800 text-slate-400'}`}>
+            <MessageSquare className="w-4 h-4" />
+          </div>
           <div>
-            <p className={`text-xs font-bold ${isGlobalActive ? 'text-[var(--bg-accent)]' : 'text-[var(--text-primary)]'}`}>Global Chat Room</p>
-            <p className="text-[10px] text-[var(--text-secondary)]">Public & encrypted</p>
+            <p className={`text-xs font-extrabold ${isGlobalActive ? 'text-cyan-300' : 'text-white'}`}>Global Chat Room</p>
+            <p className="text-[10px] text-slate-400 font-medium">Public & E2E Encrypted</p>
           </div>
         </div>
 
         {isGlobalActive ? (
-          <span className="px-2 py-0.5 text-[10px] bg-[var(--bg-accent)] text-white font-semibold rounded-full">Active</span>
+          <span className="px-2.5 py-0.5 text-[10px] bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-950 font-extrabold rounded-full shadow-md shadow-cyan-500/30 animate-pulse">
+            Active
+          </span>
         ) : (
           canInstallApp && (
             <button
               onClick={(e) => { e.stopPropagation(); onInstallApp(); }}
-              className="px-2.5 py-1 text-[11px] bg-[var(--bg-accent)] text-white font-semibold rounded-lg hover:bg-[var(--bg-accent-hover)] transition flex items-center gap-1 shadow-sm"
-              title="Install Mobile/Desktop App"
+              className="px-2.5 py-1 text-[11px] bg-gradient-to-r from-emerald-400 to-cyan-500 text-slate-950 font-bold rounded-lg hover:brightness-110 transition flex items-center gap-1 shadow-md"
+              title="Install App"
             >
               <Download className="w-3 h-3" />
               Install
@@ -146,19 +178,19 @@ export default function Sidebar({
       {/* ── User Search Input ── */}
       <div className="px-3 mb-2">
         <div className="relative">
-          <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-cyan-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             id="user-search-input"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search user to chat..."
-            className="w-full bg-[var(--bg-tertiary)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] text-xs pl-9 pr-8 py-2 rounded-xl border border-[var(--border-color)] focus:border-[var(--bg-accent)]/50 focus:outline-none transition-colors"
+            className="w-full bg-slate-900/90 text-white placeholder:text-slate-500 text-xs pl-9 pr-8 py-2.5 rounded-xl border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 focus:outline-none transition-all shadow-inner"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-0.5 rounded-full"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded-full"
               title="Clear search"
             >
               <X className="w-3.5 h-3.5" />
@@ -167,38 +199,126 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* ── WhatsApp Status & Music Stories Section ── */}
+      <div className="px-3 mb-3 pb-2 border-b border-slate-800/80">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-[11px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 uppercase tracking-wider">
+              Status Stories
+            </span>
+          </div>
+          <button
+            onClick={onOpenStatusModal}
+            className="text-[10px] font-extrabold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 px-2 py-0.5 rounded-full transition flex items-center gap-1 shadow-xs"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Status</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
+          {/* My Status */}
+          <div className="flex flex-col items-center shrink-0">
+            <button
+              onClick={() => {
+                resumeAudioContext();
+                if (myStatusGroup) {
+                  onOpenStatusViewer(myStatusGroup);
+                } else if (onOpenStatusModal) {
+                  onOpenStatusModal();
+                }
+              }}
+              className="relative p-0.5 rounded-full transition-transform hover:scale-105"
+            >
+              <div className={`p-0.5 rounded-full ${myStatusGroup ? 'bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 shadow-md shadow-cyan-500/20' : 'border-2 border-dashed border-slate-700'}`}>
+                <img
+                  src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                  alt="My Status"
+                  className="w-11 h-11 rounded-full object-cover border-2 border-[#0d1622]"
+                />
+              </div>
+              <div 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  resumeAudioContext(); 
+                  if (onOpenStatusModal) onOpenStatusModal(); 
+                }}
+                className="absolute bottom-0 right-0 p-1 bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 rounded-full shadow-md hover:scale-110 transition cursor-pointer"
+                title="Add New Status"
+              >
+                <Plus className="w-3 h-3 stroke-[3]" />
+              </div>
+            </button>
+            <span className="text-[10px] font-bold text-slate-300 mt-1 truncate max-w-[60px]">
+              {myStatusGroup ? 'My Status' : 'Add Status'}
+            </span>
+          </div>
+
+          {/* Contact Statuses */}
+          {otherStatusGroups.map((group) => (
+            <div key={group.userId} className="flex flex-col items-center shrink-0">
+              <button
+                onClick={() => {
+                  resumeAudioContext();
+                  onOpenStatusViewer(group);
+                }}
+                className="relative p-0.5 rounded-full bg-gradient-to-r from-cyan-400 via-purple-500 to-emerald-400 shadow-md shadow-cyan-500/20 transition-transform hover:scale-105 animate-pulse-glow"
+              >
+                <img
+                  src={group.userAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                  alt={group.userName}
+                  className="w-11 h-11 rounded-full object-cover border-2 border-[#0d1622]"
+                />
+                {group.statuses.some(s => s.songTitle) && (
+                  <span className="absolute -top-1 -right-1 p-1 bg-purple-500 text-white rounded-full text-[9px] shadow-md animate-bounce">
+                    <Music className="w-2.5 h-2.5" />
+                  </span>
+                )}
+              </button>
+              <span className="text-[10px] font-extrabold text-white mt-1 truncate max-w-[60px]">
+                {group.userName?.split(' ')[0]}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── Online Users Section Header ── */}
-      <div className="px-3 pt-2 pb-1 flex items-center justify-between">
+      <div className="px-3.5 pt-1 pb-1.5 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+          <Wifi className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+          <span className="text-[11px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 uppercase tracking-wider">
             {searchQuery ? 'Search Results' : 'Online Users'}
           </span>
         </div>
-        <span className="text-[10px] font-bold text-[var(--bg-accent)] bg-[var(--bg-accent)]/10 px-2 py-0.5 rounded-full">
+        <span className="text-[10px] font-extrabold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 rounded-full shadow-xs">
           {searchQuery ? filteredUsers.length + (isCurrentUserMatch ? 1 : 0) : onlineUsers.length + 1}
         </span>
       </div>
 
       {/* ── User List ── */}
-      <div className="flex-1 overflow-y-auto px-2 pt-1">
+      <div className="flex-1 overflow-y-auto px-2 pt-1 space-y-1">
         {/* Current user (you) */}
         {isCurrentUserMatch && (
           <div
             onClick={() => setSelectedUserModal({ ...currentUser, isMe: true })}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[var(--bg-accent)]/5 border border-[var(--bg-accent)]/10 mb-1 cursor-pointer hover:bg-[var(--bg-accent)]/10 transition"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border border-emerald-500/20 mb-1 cursor-pointer hover:border-emerald-500/40 transition-all shadow-sm group"
           >
             <div className="relative shrink-0">
               <img
-                src={currentUser.avatar}
-                alt={currentUser.name}
-                className="w-10 h-10 rounded-full object-cover"
+                src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                alt={currentUser?.name || 'User'}
+                className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/30 group-hover:scale-105 transition-transform"
               />
               <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{currentUser.name}</p>
-              <p className="text-[11px] text-[var(--bg-accent)] font-medium">You ({currentUser.username || 'Online'})</p>
+              <p className="text-sm font-bold text-[var(--text-primary)] truncate">{currentUser?.name}</p>
+              <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                <span>You</span>
+                <span className="text-[var(--text-secondary)] font-normal">• {currentUser?.username || 'Online'}</span>
+              </p>
             </div>
           </div>
         )}
@@ -222,35 +342,35 @@ export default function Sidebar({
                   if (onSelectChatTarget) onSelectChatTarget(user);
                   if (onCloseMobile) onCloseMobile();
                 }}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition mb-1 group border ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer transition-all duration-200 group border ${
                   isUserActive
-                    ? 'bg-[var(--bg-accent)]/15 border-[var(--bg-accent)]/30'
-                    : 'hover:bg-[var(--bg-tertiary)] border-transparent'
+                    ? 'bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-transparent border-emerald-500/40 shadow-md shadow-emerald-500/10'
+                    : 'bg-transparent hover:bg-[var(--bg-tertiary)]/70 border-transparent hover:border-white/5'
                 }`}
               >
                 <div className="relative shrink-0">
                   <img
                     src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
                     alt={user.name}
-                    className="w-10 h-10 rounded-full object-cover group-hover:scale-105 transition-transform"
+                    className="w-10 h-10 rounded-full object-cover group-hover:scale-105 transition-transform ring-2 ring-white/5"
                   />
                   <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold truncate transition-colors ${
-                    isUserActive ? 'text-[var(--bg-accent)]' : 'text-[var(--text-primary)] group-hover:text-[var(--bg-accent)]'
+                  <p className={`text-sm font-bold truncate transition-colors ${
+                    isUserActive ? 'text-emerald-400' : 'text-[var(--text-primary)] group-hover:text-emerald-300'
                   }`}>
                     {user.name}
                   </p>
-                  <p className="text-[11px] text-emerald-400 flex items-center gap-1">
+                  <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
                     <span>Online</span>
                     {user.username && <span className="text-[var(--text-secondary)] font-normal">• @{user.username}</span>}
                   </p>
                 </div>
 
                 {unread > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-bounce">
+                  <span className="bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md shadow-red-500/30 animate-bounce">
                     {unread}
                   </span>
                 )}
@@ -260,7 +380,7 @@ export default function Sidebar({
                     e.stopPropagation();
                     setSelectedUserModal(user);
                   }}
-                  className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="p-1.5 text-[var(--text-secondary)] hover:text-white hover:bg-white/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                   title="View Profile"
                 >
                   <UserCheck className="w-4 h-4" />
@@ -327,9 +447,19 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* ── Bottom Security Badge ── */}
-      <div className="p-3 border-t border-[var(--border-color)]">
-        <div className="dev-badge-glow rounded-xl px-4 py-3 flex items-center gap-3">
+      {/* ── Bottom Security Badge & Settings Button ── */}
+      <div className="p-3 border-t border-[var(--border-color)] space-y-2">
+        <button
+          onClick={() => {
+            if (onOpenSettings) onOpenSettings();
+          }}
+          className="w-full py-2 px-3 bg-gradient-to-r from-cyan-500/10 via-purple-500/10 to-pink-500/10 hover:from-cyan-500/20 hover:to-purple-500/20 border border-cyan-500/30 rounded-xl text-xs font-extrabold text-cyan-300 flex items-center justify-center gap-2 transition shadow-md hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <Settings className="w-4 h-4 text-cyan-400" />
+          <span>Settings & Preferences</span>
+        </button>
+
+        <div className="dev-badge-glow rounded-xl px-4 py-2.5 flex items-center gap-3">
           <Shield className="w-5 h-5 text-[var(--bg-accent)]" />
           <div>
             <p className="text-xs font-semibold text-[var(--text-primary)]">SecureChat Guard™ App</p>

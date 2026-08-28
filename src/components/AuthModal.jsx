@@ -148,50 +148,52 @@ export default function AuthModal({ onLogin }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-fade-in select-none">
-      <div className="w-full max-w-md glass-modal rounded-3xl p-8 border border-emerald-500/20 shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#05090d]/90 backdrop-blur-2xl animate-fade-in select-none">
+      <div className="w-full max-w-md glass-modal rounded-3xl p-8 border border-emerald-500/30 shadow-2xl relative overflow-hidden">
         
-        {/* Glow backdrop */}
-        <div className="absolute -top-20 -left-20 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 -right-20 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl" />
+        {/* Glow ambient backdrops */}
+        <div className="absolute -top-24 -left-24 w-56 h-56 bg-emerald-500/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 w-56 h-56 bg-sky-500/20 rounded-full blur-3xl" />
 
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center space-y-3 mb-6 relative">
-          <div className="p-4 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 text-emerald-400 border border-emerald-500/40 shadow-xl shadow-emerald-500/15">
             <ShieldCheck className="w-10 h-10 pulse-shield" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">SecureChat</h2>
-            <p className="text-xs text-gray-400 mt-1">End-to-End Encrypted Messaging</p>
+            <h2 className="text-2xl font-extrabold text-white tracking-tight bg-gradient-to-r from-white via-slate-100 to-emerald-300 bg-clip-text text-transparent">
+              SecureChat Guard
+            </h2>
+            <p className="text-xs text-slate-400 mt-1 font-medium">End-to-End Encrypted Messaging & Fraud Link Security</p>
           </div>
         </div>
 
         {/* Tab Switcher — only show when NOT in password-generated state */}
         {!passwordGeneratedState && activeTab !== 'forgot' && (
-          <div className="flex rounded-xl bg-gray-900/80 p-1 mb-5 border border-gray-800 relative">
+          <div className="flex rounded-2xl bg-[#091117] p-1.5 mb-6 border border-slate-800/80 shadow-inner relative">
             <button
               type="button"
               onClick={() => switchTab('login')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'login'
-                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
-                  : 'text-gray-400 hover:text-gray-200'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
             >
               <LogIn className="w-3.5 h-3.5" />
-              Sign In
+              <span>Sign In</span>
             </button>
             <button
               type="button"
               onClick={() => switchTab('register')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'register'
-                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
-                  : 'text-gray-400 hover:text-gray-200'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
             >
               <UserPlus className="w-3.5 h-3.5" />
-              Register
+              <span>Register</span>
             </button>
           </div>
         )}
