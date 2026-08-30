@@ -1,10 +1,11 @@
+import { BACKEND_URL } from '../config/api';
 /**
  * API helper functions for SecureChat backend
  * Handles user registration, login, user directory, and chat message storage.
  * Includes graceful fallback to LocalStorage if backend server is offline.
  */
 
-const API_BASE = '/api';
+const API_BASE = (typeof window !== 'undefined' && window.location.origin.includes('localhost') && !window.location.origin.includes('capacitor')) ? '/api' : (typeof BACKEND_URL !== 'undefined' ? `${BACKEND_URL}/api` : 'https://securechat-ioe9.onrender.com/api');
 
 /**
  * Safely parse JSON from fetch response, avoiding "Unexpected end of JSON input"
@@ -79,7 +80,7 @@ export async function registerUser(email, fullName) {
     }
 
     // ── Offline Fallback ──
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
 
     if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
       throw new Error('Invalid email address format.');
@@ -143,7 +144,7 @@ export async function loginUser(email, password) {
     }
 
     // ── Offline Fallback ──
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
     const users = getOfflineUsersDB();
 
     const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
@@ -186,7 +187,7 @@ export async function resetPassword(email) {
     }
 
     // ── Offline Fallback ──
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
     const users = getOfflineUsersDB();
 
     const userIndex = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);

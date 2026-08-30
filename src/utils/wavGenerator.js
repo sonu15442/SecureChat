@@ -5,7 +5,7 @@
  */
 
 // Simple WAV PCM Encoder (8-bit, 8000 Hz)
-function generateWavDataUri(melodyNotes) {
+export function generateWavDataUri(melodyNotes) {
   const sampleRate = 8000;
   let samples = [];
 
@@ -61,6 +61,10 @@ function generateWavDataUri(melodyNotes) {
     binary += String.fromCharCode(bytes[i]);
   }
   return 'data:audio/wav;base64,' + btoa(binary);
+}
+
+export function generateBeepWav(freq = 440, dur = 1.5) {
+  return generateWavDataUri([{ freq, dur }]);
 }
 
 // Frequencies

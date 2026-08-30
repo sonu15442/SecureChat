@@ -116,7 +116,7 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
 
   if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
     return res.status(400).json({ error: 'Invalid email address format.' });
@@ -182,7 +182,7 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ error: 'Please enter your password.' });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
   const users = loadUsers();
 
   const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
@@ -214,7 +214,7 @@ app.post('/api/auth/reset-password', (req, res) => {
     return res.status(400).json({ error: 'Please enter your registered email address.' });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
   const users = loadUsers();
 
   const userIndex = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);

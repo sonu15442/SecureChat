@@ -39,7 +39,8 @@ export default function AuthModal({ onLogin }) {
     e.preventDefault();
     setError('');
 
-    if (!email.trim()) {
+    const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
+    if (!cleanEmail) {
       setError('Please enter your email address.');
       return;
     }
@@ -51,7 +52,7 @@ export default function AuthModal({ onLogin }) {
     setLoading(true);
 
     try {
-      const result = await registerUser(email, fullName);
+      const result = await registerUser(cleanEmail, fullName);
       setGeneratedPassword(result.password);
       setRegisteredUser(result.user);
       setPasswordTitle('Account Created!');
@@ -68,7 +69,8 @@ export default function AuthModal({ onLogin }) {
     e.preventDefault();
     setError('');
 
-    if (!email.trim()) {
+    const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
+    if (!cleanEmail) {
       setError('Please enter your email address.');
       return;
     }
@@ -80,7 +82,7 @@ export default function AuthModal({ onLogin }) {
     setLoading(true);
 
     try {
-      const result = await loginUser(email, password);
+      const result = await loginUser(cleanEmail, password);
       const userData = result.user;
       localStorage.setItem('securechat_user', JSON.stringify(userData));
       onLogin(userData);
@@ -96,7 +98,8 @@ export default function AuthModal({ onLogin }) {
     e.preventDefault();
     setError('');
 
-    if (!email.trim()) {
+    const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
+    if (!cleanEmail) {
       setError('Please enter your registered email address.');
       return;
     }
@@ -104,7 +107,7 @@ export default function AuthModal({ onLogin }) {
     setLoading(true);
 
     try {
-      const result = await resetPassword(email);
+      const result = await resetPassword(cleanEmail);
       setGeneratedPassword(result.password);
       setRegisteredUser(null);
       setPasswordTitle('New Password Generated!');

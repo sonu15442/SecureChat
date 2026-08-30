@@ -10,6 +10,7 @@
     "dev:full": "npx -y concurrently \"npm run server\" \"npm run dev\"",
     "build": "vite build",
     "test": "vitest run",
+    "test:report": "python scripts/generate-test-reports.py",
     "lint": "oxlint",
     "preview": "vite preview",
     "mock-server": "node load-test/mock-server.js",
