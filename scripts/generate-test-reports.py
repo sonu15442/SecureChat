@@ -45,6 +45,19 @@ def generate_test_cases():
             num += 1
     return test_cases
 
+def report_file_name(filename):
+    stem, ext = os.path.splitext(filename)
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+    return f"{stem}_{stamp}{ext}"
+
+
+def save_workbook(workbook, filename):
+    output_dir = 'Test Cases'
+    os.makedirs(output_dir, exist_ok=True)
+    final_path = os.path.join(output_dir, report_file_name(filename))
+    workbook.save(final_path)
+
+
 def main():
     output_dir = 'Test Cases'
     os.makedirs(output_dir, exist_ok=True)
@@ -88,7 +101,7 @@ def main():
     for tc in test_cases:
         ws_details.append([tc['no'], tc['category'], tc['name'], 'PASSED', 'None - test passed successfully.'])
 
-    wb_auto.save(os.path.join(output_dir, 'Automation_Test_Report.xlsx'))
+    save_workbook(wb_auto, 'Automation_Test_Report.xlsx')
 
     # 2. Execution_Summary.xlsx
     wb_exec = openpyxl.Workbook()
@@ -99,14 +112,14 @@ def main():
     ws_exec_summary.append(['Passed Tests', passed_tests])
     ws_exec_summary.append(['Failed Tests', failed_tests])
     ws_exec_summary.append(['Pass Rate', f"{pass_rate}%"])
-    wb_exec.save(os.path.join(output_dir, 'Execution_Summary.xlsx'))
+    save_workbook(wb_exec, 'Execution_Summary.xlsx')
 
     # 3. Failed_Test_Cases.xlsx
     wb_failed_only = openpyxl.Workbook()
     ws_f_only = wb_failed_only.active
     ws_f_only.title = 'Failed Tests'
     ws_f_only.append(['No.', 'Category', 'Test Name', 'Error'])
-    wb_failed_only.save(os.path.join(output_dir, 'Failed_Test_Cases.xlsx'))
+    save_workbook(wb_failed_only, 'Failed_Test_Cases.xlsx')
 
     # 4. Passed_Test_Cases.xlsx
     wb_passed_only = openpyxl.Workbook()
@@ -115,7 +128,7 @@ def main():
     ws_p_only.append(['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'])
     for tc in test_cases:
         ws_p_only.append([tc['no'], tc['category'], tc['name'], tc['duration'], tc['status']])
-    wb_passed_only.save(os.path.join(output_dir, 'Passed_Test_Cases.xlsx'))
+    save_workbook(wb_passed_only, 'Passed_Test_Cases.xlsx')
 
     # 5. Summary_Report.xlsx
     wb_sum_report = openpyxl.Workbook()
@@ -123,7 +136,7 @@ def main():
     ws_sr.title = 'Summary'
     ws_sr.append(['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %', 'Duration (sec)', 'Start Time', 'End Time'])
     ws_sr.append(['LogiRoute Mobile App - Full E2E Workflow', total_tests, passed_tests, failed_tests, pass_rate, 32, start_time, end_time])
-    wb_sum_report.save(os.path.join(output_dir, 'Summary_Report.xlsx'))
+    save_workbook(wb_sum_report, 'Summary_Report.xlsx')
 
     print(f"Successfully updated/generated all 5 test report Excel files in '{output_dir}/' with {total_tests} passed test cases.")
 

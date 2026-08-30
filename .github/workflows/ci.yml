@@ -163,6 +163,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Python report dependency
+        run: python -m pip install openpyxl
+
       - name: Build application
         run: npm run build
 
