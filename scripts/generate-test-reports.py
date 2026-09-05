@@ -59,6 +59,7 @@ def save_workbook(workbook, filename):
 
 
 def create_suite_report(suite_name, test_cases, filename):
+    suite_prefix = suite_name.replace(' Tests', '')
     workbook = openpyxl.Workbook()
     summary = workbook.active
     summary.title = 'Summary'
@@ -71,7 +72,7 @@ def create_suite_report(suite_name, test_cases, filename):
         passed.append([
             test_case['no'],
             test_case['category'],
-            test_case['name'],
+            f"{suite_prefix} {test_case['category']} Spec #{test_case['no']:03d}",
             test_case['duration'],
             test_case['status'],
         ])
