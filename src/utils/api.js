@@ -1,11 +1,66 @@
 import { BACKEND_URL } from '../config/api';
-/**
- * API helper functions for SecureChat backend
- * Handles user registration, login, user directory, and chat message storage.
- * Includes graceful fallback to LocalStorage if backend server is offline.
- */
+import { DEFAULT_SAVED_USERS } from './initialData';
 
-const API_BASE = (typeof window !== 'undefined' && window.location.origin.includes('localhost') && !window.location.origin.includes('capacitor')) ? '/api' : (typeof BACKEND_URL !== 'undefined' ? `${BACKEND_URL}/api` : 'https://securechat-ioe9.onrender.com/api');
+/**
+ * Get API endpoints to try in order of priority
+ */
+function getApiCandidates() {
+  const candidates = [];
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin || '';
+    const hostname = window.location.hostname || '';
+    
+    // In browser on localhost or local IP
+    if (!origin.includes('capacitor')) {
+      candidates.push('/api');
+    }
+    
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      candidates.push(`http://${hostname}:3001/api`);
+      candidates.push(`http://${hostname}:5173/api`);
+    }
+    candidates.push('http://localhost:3001/api');
+    candidates.push('http://127.0.0.1:3001/api');
+    candidates.push('http://10.15.104.35:3001/api');
+  }
+
+  if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL) {
+    const clean = BACKEND_URL.endsWith('/api') ? BACKEND_URL : `${BACKEND_URL}/api`;
+    candidates.push(clean);
+  }
+
+  // Remove duplicate URLs
+  return Array.from(new Set(candidates));
+}
+
+/**
+ * Fetch with automatic fallback across API base endpoints and per-request timeout
+ */
+async function fetchWithFallback(endpoint, options = {}) {
+  const candidates = getApiCandidates();
+  let lastError = null;
+
+  for (const base of candidates) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    try {
+      const url = `${base}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      const data = await safeParseResponse(res);
+      return { res, data };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('BACKEND_OFFLINE');
+}
 
 /**
  * Safely parse JSON from fetch response, avoiding "Unexpected end of JSON input"
@@ -23,16 +78,43 @@ async function safeParseResponse(res) {
 }
 
 // Offline LocalStorage DB Helpers
-function getOfflineUsersDB() {
+export function getOfflineUsersDB() {
   try {
-    return JSON.parse(localStorage.getItem('securechat_all_users_db') || '[]');
+    const saved = localStorage.getItem('securechat_all_users_db');
+    if (!saved) {
+      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
+      return DEFAULT_SAVED_USERS;
+    }
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
+      return DEFAULT_SAVED_USERS;
+    }
+    // Filter out any fake demo mock users (Alice, Bob, etc.)
+    const filtered = parsed.filter(u =>
+      u &&
+      u.id &&
+      !u.id.includes('demo') &&
+      u.email !== 'alice@example.com' &&
+      u.email !== 'bob@example.com'
+    );
+    const userMap = new Map();
+    DEFAULT_SAVED_USERS.forEach(u => { if (u?.id) userMap.set(u.id, u); });
+    filtered.forEach(u => { if (u?.id) userMap.set(u.id, { ...userMap.get(u.id), ...u }); });
+    const result = Array.from(userMap.values());
+    localStorage.setItem('securechat_all_users_db', JSON.stringify(result));
+    return result;
   } catch {
-    return [];
+    return DEFAULT_SAVED_USERS;
   }
 }
 
-function saveOfflineUsersDB(users) {
-  localStorage.setItem('securechat_all_users_db', JSON.stringify(users));
+export function saveOfflineUsersDB(users) {
+  try {
+    localStorage.setItem('securechat_all_users_db', JSON.stringify(users));
+  } catch (e) {
+    console.error('Error saving offline users DB:', e);
+  }
 }
 
 function hashPasswordClient(password) {
@@ -61,16 +143,22 @@ function generateOfflinePassword() {
  */
 export async function registerUser(email, fullName) {
   try {
-    const res = await fetch(`${API_BASE}/auth/register`, {
+    const { res, data } = await fetchWithFallback('/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, fullName })
     });
 
-    const data = await safeParseResponse(res);
-
     if (!res.ok) {
       throw new Error(data.error || 'Registration failed.');
+    }
+
+    if (data.user) {
+      const users = getOfflineUsersDB();
+      const existingIdx = users.findIndex(u => u.id === data.user.id);
+      if (existingIdx !== -1) users[existingIdx] = data.user;
+      else users.push(data.user);
+      saveOfflineUsersDB(users);
     }
 
     return data;
@@ -125,16 +213,22 @@ export async function registerUser(email, fullName) {
  */
 export async function loginUser(email, password) {
   try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const { res, data } = await fetchWithFallback('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
 
-    const data = await safeParseResponse(res);
-
     if (!res.ok) {
       throw new Error(data.error || 'Login failed.');
+    }
+
+    if (data.user) {
+      const users = getOfflineUsersDB();
+      const existingIdx = users.findIndex(u => u.id === data.user.id);
+      if (existingIdx !== -1) users[existingIdx] = data.user;
+      else users.push(data.user);
+      saveOfflineUsersDB(users);
     }
 
     return data;
@@ -168,13 +262,11 @@ export async function loginUser(email, password) {
  */
 export async function resetPassword(email) {
   try {
-    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    const { res, data } = await fetchWithFallback('/auth/reset-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
     });
-
-    const data = await safeParseResponse(res);
 
     if (!res.ok) {
       throw new Error(data.error || 'Password reset failed.');
@@ -204,33 +296,100 @@ export async function resetPassword(email) {
 }
 
 /**
- * Clear all local storage database entries
+ * Clear current user session from local storage while preserving saved users database
  */
 export function clearAllDatabaseData() {
   try {
     localStorage.removeItem('securechat_user');
-    localStorage.removeItem('securechat_all_users_db');
-    localStorage.removeItem('securechat_all_messages');
   } catch (e) {
-    console.error('Error clearing local database:', e);
+    console.error('Error clearing local session:', e);
   }
+}
+
+/**
+ * Sync active user to server database so other devices immediately discover them
+ */
+export async function syncUserWithBackend(user) {
+  if (!user || !user.id || !user.name) return;
+  try {
+    const { data } = await fetchWithFallback('/users/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user })
+    });
+    if (data?.users) {
+      saveOfflineUsersDB(data.users);
+    }
+  } catch {
+    // Offline handled
+  }
+}
+
+/**
+ * Send presence heartbeat to backend to keep user marked online and sync profile updates
+ */
+export async function sendPresenceHeartbeat(user) {
+  if (!user || !user.id) return { onlineUserIds: [] };
+  try {
+    const { data } = await fetchWithFallback('/presence/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user })
+    });
+    return data || {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Notify backend user has left / gone offline
+ */
+export async function sendPresenceLeave(userId) {
+  if (!userId) return;
+  try {
+    await fetchWithFallback('/presence/leave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId })
+    });
+  } catch {}
 }
 
 /**
  * Fetch all registered users
  */
 export async function fetchAllUsers() {
+  // Attempt to sync current user from local storage to backend database
   try {
-    const res = await fetch(`${API_BASE}/users`);
-    const data = await safeParseResponse(res);
+    const saved = localStorage.getItem('securechat_user');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.id) {
+        syncUserWithBackend(parsed);
+      }
+    }
+  } catch {
+    // Ignore JSON errors
+  }
+
+  try {
+    const { res, data } = await fetchWithFallback('/users');
 
     if (!res.ok) {
       throw new Error(data.error || 'Failed to fetch users.');
     }
 
-    const users = data.users || [];
-    saveOfflineUsersDB(users);
-    return users;
+    const remoteUsers = data.users || [];
+    const localUsers = getOfflineUsersDB();
+
+    // Merge remote users with local offline database
+    const map = new Map();
+    localUsers.forEach(u => { if (u && u.id) map.set(u.id, u); });
+    remoteUsers.forEach(u => { if (u && u.id) map.set(u.id, { ...map.get(u.id), ...u }); });
+    const merged = Array.from(map.values());
+    saveOfflineUsersDB(merged);
+    return merged;
   } catch {
     return getOfflineUsersDB();
   }
@@ -241,8 +400,7 @@ export async function fetchAllUsers() {
  */
 export async function fetchStoredMessages() {
   try {
-    const res = await fetch(`${API_BASE}/messages`);
-    const data = await safeParseResponse(res);
+    const { res, data } = await fetchWithFallback('/messages');
 
     if (!res.ok) {
       throw new Error(data.error || 'Failed to fetch messages.');
@@ -280,7 +438,7 @@ export async function saveStoredMessage(message) {
   }
 
   try {
-    await fetch(`${API_BASE}/messages`, {
+    await fetchWithFallback('/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(message)
@@ -289,3 +447,46 @@ export async function saveStoredMessage(message) {
     // Offline handled
   }
 }
+
+/**
+ * Search registered users dynamically from database / backend
+ */
+export async function searchUsers(query) {
+  if (!query || !query.trim()) {
+    return fetchAllUsers();
+  }
+  const cleanQ = query.trim();
+  try {
+    const { res, data } = await fetchWithFallback(`/users/search?q=${encodeURIComponent(cleanQ)}`);
+    if (res.ok && data && Array.isArray(data.users)) {
+      const localUsers = getOfflineUsersDB();
+      const map = new Map();
+      localUsers.forEach(u => { if (u && u.id) map.set(u.id, u); });
+      data.users.forEach(u => { if (u && u.id) map.set(u.id, { ...map.get(u.id), ...u }); });
+      const merged = Array.from(map.values());
+      saveOfflineUsersDB(merged);
+      return data.users;
+    }
+  } catch {
+    // Fallback to local filter
+  }
+
+  const all = await fetchAllUsers();
+  const qLower = cleanQ.toLowerCase();
+  const cleanQNoAt = qLower.startsWith('@') ? qLower.slice(1) : qLower;
+  return all.filter(u => {
+    if (!u) return false;
+    const name = (u.name || '').toLowerCase();
+    const username = (u.username || '').toLowerCase();
+    const email = (u.email || '').toLowerCase();
+    const phone = (u.phone || '').toLowerCase();
+    return (
+      name.includes(qLower) ||
+      username.includes(qLower) ||
+      username.includes(cleanQNoAt) ||
+      email.includes(qLower) ||
+      phone.includes(qLower)
+    );
+  });
+}
+

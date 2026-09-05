@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import LinkRiskModal from './components/LinkRiskModal';
@@ -8,10 +8,12 @@ import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
 import StatusModal from './components/StatusModal';
 import StatusViewerModal from './components/StatusViewerModal';
+import LiveTestReporter from './components/LiveTestReporter';
 import { DEFAULT_SETTINGS } from './utils/initialData';
-import { initChannel, destroyChannel, broadcastMessage, broadcastReadReceipt, on } from './utils/realtimeChannel';
-import { fetchAllUsers, fetchStoredMessages, saveStoredMessage, clearAllDatabaseData } from './utils/api';
+import { initChannel, destroyChannel, broadcastMessage, broadcastReadReceipt, broadcastUserUpdated, on } from './utils/realtimeChannel';
+import { fetchAllUsers, fetchStoredMessages, saveStoredMessage, clearAllDatabaseData, syncUserWithBackend, sendPresenceHeartbeat, sendPresenceLeave, getOfflineUsersDB } from './utils/api';
 import { getActiveStatuses } from './utils/statusManager';
+import { recordAction } from './utils/testRecorder';
 
 function App() {
   // ── Auth ──
@@ -33,8 +35,8 @@ function App() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [activeStatusViewerGroup, setActiveStatusViewerGroup] = useState(null);
 
-  // ── Registered Users Directory (fetched from backend) ──
-  const [registeredUsers, setRegisteredUsers] = useState([]);
+  // ── Registered Users Directory (seeded from saved DB & synced from backend) ──
+  const [registeredUsers, setRegisteredUsers] = useState(() => getOfflineUsersDB());
 
   // ── Messages & Presence State ──
   const [messages, setMessages] = useState([]);
@@ -152,7 +154,20 @@ function App() {
       }]);
     });
 
-    cleanupRef.current = [unsub1, unsub2, unsub3, unsub4];
+    // Listen for profile updates in other tabs
+    const unsub5 = on('user_updated', (user) => {
+      setRegisteredUsers(prev => {
+        const idx = prev.findIndex(u => u.id === user.id);
+        if (idx !== -1) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], ...user };
+          return copy;
+        }
+        return [...prev, user];
+      });
+    });
+
+    cleanupRef.current = [unsub1, unsub2, unsub3, unsub4, unsub5];
 
     return () => {
       cleanupRef.current.forEach(fn => fn());
@@ -160,9 +175,29 @@ function App() {
     };
   }, [currentUser]);
 
+  // Server-side cross-device presence heartbeat
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const ping = async () => {
+      await sendPresenceHeartbeat(currentUser);
+    };
+
+    ping();
+    const heartbeatInterval = setInterval(ping, 3000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      sendPresenceLeave(currentUser.id);
+    };
+  }, [currentUser]);
+
   // Announce departure on tab close & periodically clean up expired 24h statuses
   useEffect(() => {
-    const handleUnload = () => destroyChannel();
+    const handleUnload = () => {
+      destroyChannel();
+      if (currentUser?.id) sendPresenceLeave(currentUser.id);
+    };
     window.addEventListener('beforeunload', handleUnload);
 
     const statusTimer = setInterval(() => {
@@ -173,30 +208,37 @@ function App() {
       window.removeEventListener('beforeunload', handleUnload);
       clearInterval(statusTimer);
     };
-  }, []);
+  }, [currentUser?.id]);
 
-  // Combine registered users & online users
-  const allAvailableUsers = useRef([]);
-  const userMap = new Map();
-  registeredUsers.forEach(u => {
-    if (u.id !== currentUser?.id) {
-      userMap.set(u.id, { ...u, isOnline: false });
-    }
-  });
-  onlineUsers.forEach(u => {
-    if (u.id !== currentUser?.id) {
-      const existing = userMap.get(u.id);
-      userMap.set(u.id, { ...existing, ...u, isOnline: true });
-    }
-  });
-  allAvailableUsers.current = Array.from(userMap.values());
+  // ── Combine registered users & online users reactively ──
+  const allAvailableUsers = useMemo(() => {
+    const userMap = new Map();
+    registeredUsers.forEach(u => {
+      if (u && u.id && u.id !== currentUser?.id) {
+        userMap.set(u.id, { ...u, isOnline: !!u.isOnline });
+      }
+    });
+    onlineUsers.forEach(u => {
+      if (u && u.id && u.id !== currentUser?.id) {
+        const existing = userMap.get(u.id);
+        userMap.set(u.id, { ...existing, ...u, isOnline: true });
+      }
+    });
+    return Array.from(userMap.values());
+  }, [registeredUsers, onlineUsers, currentUser?.id]);
 
-  // ── Handlers ──
   // Fetch registered users from backend
   const loadRegisteredUsers = useCallback(async () => {
     try {
       const users = await fetchAllUsers();
-      setRegisteredUsers(users);
+      if (Array.isArray(users)) {
+        setRegisteredUsers(prev => {
+          if (prev.length === users.length && JSON.stringify(prev) === JSON.stringify(users)) {
+            return prev;
+          }
+          return users;
+        });
+      }
     } catch (err) {
       console.error('Failed to fetch users:', err);
     }
@@ -207,24 +249,50 @@ function App() {
     try {
       const history = await fetchStoredMessages();
       if (history && history.length > 0) {
-        setMessages(history);
+        setMessages(prev => {
+          // Merge history without duplicating existing messages
+          const existingIds = new Set(prev.map(m => m.id));
+          const newOnes = history.filter(m => !existingIds.has(m.id));
+          if (newOnes.length === 0) return prev;
+          return [...prev, ...newOnes];
+        });
       }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
     }
   }, []);
 
-  // Load users & messages on mount and when currentUser changes
+  // Load users & messages on mount and poll periodically for dynamic sync
   useEffect(() => {
-    if (currentUser) {
+    if (!currentUser) return;
+    
+    loadRegisteredUsers();
+    loadStoredMessages();
+
+    // Auto-sync every 3 seconds so new registered users, profiles & messages sync seamlessly
+    const syncInterval = setInterval(() => {
       loadRegisteredUsers();
       loadStoredMessages();
-    }
+    }, 3000);
+
+    const handleFocus = () => {
+      loadRegisteredUsers();
+      loadStoredMessages();
+      sendPresenceHeartbeat(currentUser);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [currentUser, loadRegisteredUsers, loadStoredMessages]);
 
   const handleLogin = (user) => {
     setCurrentUser(user);
     setActiveChatTarget('global');
+    syncUserWithBackend(user);
+    sendPresenceHeartbeat(user);
     // Refresh user list and load message history after login
     loadRegisteredUsers();
     loadStoredMessages();
@@ -233,9 +301,15 @@ function App() {
   const handleUpdateUser = (updatedUser) => {
     setCurrentUser(updatedUser);
     localStorage.setItem('securechat_user', JSON.stringify(updatedUser));
+    broadcastUserUpdated(updatedUser);
+    syncUserWithBackend(updatedUser);
+    sendPresenceHeartbeat(updatedUser);
+    loadRegisteredUsers();
   };
 
   const handleLogout = () => {
+    recordAction('Session Management', 'User logs out and returns to the login screen');
+    if (currentUser?.id) sendPresenceLeave(currentUser.id);
     destroyChannel();
     clearAllDatabaseData();
     setCurrentUser(null);
@@ -249,6 +323,8 @@ function App() {
 
   const handleSelectChatTarget = useCallback((target) => {
     setActiveChatTarget(target);
+    const targetName = target === 'global' ? 'Global Chat' : (target?.name || 'Contact');
+    recordAction('Navigation', `User opens conversation with ${targetName}`);
 
     if (currentUser && target && target.id && target !== 'global') {
       // Clear unread count for selected target user
@@ -275,6 +351,8 @@ function App() {
 
   const handleSendMessage = useCallback((msgPayload) => {
     if (!currentUser) return;
+
+    recordAction('CRUD Operations', 'User sends end-to-end encrypted message');
 
     const messageText = typeof msgPayload === 'string' ? msgPayload : msgPayload.text;
     const imageUrl = typeof msgPayload === 'object' ? msgPayload.imageUrl : null;
@@ -307,6 +385,7 @@ function App() {
   }, [currentUser, activeChatTarget, onlineUsers]);
 
   const handleOpenLinkModal = useCallback((linkData) => {
+    recordAction('Input Validation', 'Security scanner flags link and opens safety advisory');
     setLinkModalData(linkData);
   }, []);
 
@@ -320,7 +399,12 @@ function App() {
 
   // Gate app behind Login Modal
   if (!currentUser) {
-    return <AuthModal onLogin={handleLogin} />;
+    return (
+      <>
+        <AuthModal onLogin={handleLogin} />
+        <LiveTestReporter />
+      </>
+    );
   }
 
   return (
@@ -340,7 +424,7 @@ function App() {
         ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <Sidebar
-          allUsers={allAvailableUsers.current}
+          allUsers={allAvailableUsers}
           onlineUsers={onlineUsers}
           currentUser={currentUser}
           activeChatTarget={activeChatTarget}
@@ -360,7 +444,7 @@ function App() {
       {/* Chat Panel */}
       <ChatPanel
         messages={messages}
-        allUsers={allAvailableUsers.current}
+        allUsers={allAvailableUsers}
         activeChatTarget={activeChatTarget}
         onSelectChatTarget={handleSelectChatTarget}
         onSendMessage={handleSendMessage}
@@ -385,7 +469,7 @@ function App() {
         <StatusViewerModal
           statusGroup={activeStatusViewerGroup}
           currentUserId={currentUser?.id}
-          allUsers={allAvailableUsers.current || registeredUsers}
+          allUsers={allAvailableUsers}
           onDeleteStatus={(_statusId) => {
             setStatuses(getActiveStatuses());
           }}
@@ -427,6 +511,9 @@ function App() {
           onInstallApp={handleInstallApp}
         />
       )}
+
+      {/* Live Selenium Test Suite Reporter */}
+      <LiveTestReporter />
     </div>
   );
 }

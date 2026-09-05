@@ -47,6 +47,11 @@ export function initChannel(user) {
         // Respond with our own presence so the new user sees us
         broadcastRaw('heartbeat', { user: currentUserData });
         break;
+      case 'user_updated':
+        onlineUsers.set(payload.user.id, { user: payload.user, lastSeen: Date.now() });
+        emit('user_updated', payload.user);
+        emit('presence', getOnlineUsersList());
+        break;
       case 'user_left':
         onlineUsers.delete(payload.userId);
         emit('presence', getOnlineUsersList());
@@ -94,6 +99,11 @@ export function broadcastReadReceipt(messageIds, status, readerId, senderId) {
 
 export function broadcastTyping(userId, userName) {
   broadcastRaw('typing', { userId, userName, timestamp: Date.now() });
+}
+
+export function broadcastUserUpdated(user) {
+  currentUserData = user;
+  broadcastRaw('user_updated', { user });
 }
 
 export function on(eventType, callback) {

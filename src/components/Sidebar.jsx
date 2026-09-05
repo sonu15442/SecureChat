@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Settings, LogOut, ChevronDown, MessageSquare, Wifi, Download, X, Search, UserCheck, MessageCircle, Plus, Sparkles, Music } from 'lucide-react';
 import { groupStatusesByUser } from '../utils/statusManager';
 import { resumeAudioContext } from '../utils/statusAudioPlayer';
+import { searchUsers } from '../utils/api';
+import { recordAction } from '../utils/testRecorder';
 
 export default function Sidebar({
   allUsers = [],
@@ -22,28 +24,66 @@ export default function Sidebar({
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserModal, setSelectedUserModal] = useState(null);
+  const [serverResults, setServerResults] = useState([]);
 
   const query = searchQuery.toLowerCase().trim();
+
+  // Query backend database dynamically when searching
+  useEffect(() => {
+    if (!query) {
+      setServerResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchUsers(query);
+        if (Array.isArray(results)) {
+          setServerResults(results.filter(u => u && u.id !== currentUser?.id));
+        }
+      } catch {}
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [query, currentUser?.id]);
 
   // Group active statuses by user
   const statusGroups = groupStatusesByUser(statuses);
   const myStatusGroup = statusGroups.find(g => g.userId === currentUser?.id);
   const otherStatusGroups = statusGroups.filter(g => g.userId !== currentUser?.id);
 
-  // Combine user directory
-  const usersList = allUsers.length > 0 ? allUsers : onlineUsers;
+  // Combine user directory with dynamic search results
+  const userMap = new Map();
+  (allUsers.length > 0 ? allUsers : onlineUsers).forEach(u => {
+    if (u && u.id && u.id !== currentUser?.id) userMap.set(u.id, u);
+  });
+  serverResults.forEach(u => {
+    if (u && u.id && u.id !== currentUser?.id) {
+      userMap.set(u.id, { ...userMap.get(u.id), ...u });
+    }
+  });
+  const usersList = Array.from(userMap.values());
 
-  // Filter users based on search query (name or username)
+  // Filter users based on search query (name, username, email, phone)
   const filteredUsers = usersList.filter(user => {
     if (!query) return true;
     const nameStr = (user.name || '').toLowerCase();
     const usernameStr = (user.username || '').toLowerCase();
-    return nameStr.includes(query) || usernameStr.includes(query);
+    const cleanUsername = usernameStr.startsWith('@') ? usernameStr.slice(1) : usernameStr;
+    const emailStr = (user.email || '').toLowerCase();
+    const phoneStr = (user.phone || '').toLowerCase();
+    const cleanQuery = query.startsWith('@') ? query.slice(1) : query;
+    return (
+      nameStr.includes(query) ||
+      usernameStr.includes(query) ||
+      cleanUsername.includes(cleanQuery) ||
+      emailStr.includes(query) ||
+      phoneStr.includes(query)
+    );
   });
 
   const isCurrentUserMatch = !query || 
     (currentUser?.name && currentUser.name.toLowerCase().includes(query)) ||
-    (currentUser?.username && currentUser.username.toLowerCase().includes(query));
+    (currentUser?.username && currentUser.username.toLowerCase().includes(query)) ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes(query));
 
   const isGlobalActive = !activeChatTarget || activeChatTarget === 'global';
 
@@ -183,7 +223,12 @@ export default function Sidebar({
             id="user-search-input"
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (e.target.value.length > 1) {
+                recordAction('Search', 'User searches contacts directory');
+              }
+            }}
             placeholder="Search user to chat..."
             className="w-full bg-slate-900/90 text-white placeholder:text-slate-500 text-xs pl-9 pr-8 py-2.5 rounded-xl border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 focus:outline-none transition-all shadow-inner"
           />
@@ -209,8 +254,11 @@ export default function Sidebar({
             </span>
           </div>
           <button
-            onClick={onOpenStatusModal}
-            className="text-[10px] font-extrabold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 px-2 py-0.5 rounded-full transition flex items-center gap-1 shadow-xs"
+            onClick={() => {
+              recordAction('Status Management', 'User opens status composer dialog');
+              onOpenStatusModal();
+            }}
+            className="text-[10px] font-extrabold text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 px-2 py-0.5 rounded-full transition flex items-center gap-1 shadow-xs cursor-pointer"
           >
             <Plus className="w-3 h-3" />
             <span>Add Status</span>
@@ -284,16 +332,16 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* ── Online Users Section Header ── */}
+      {/* ── Directory Section Header ── */}
       <div className="px-3.5 pt-1 pb-1.5 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Wifi className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
           <span className="text-[11px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 uppercase tracking-wider">
-            {searchQuery ? 'Search Results' : 'Online Users'}
+            {searchQuery ? 'Search Results' : 'Contacts & Users'}
           </span>
         </div>
         <span className="text-[10px] font-extrabold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 rounded-full shadow-xs">
-          {searchQuery ? filteredUsers.length + (isCurrentUserMatch ? 1 : 0) : onlineUsers.length + 1}
+          {searchQuery ? filteredUsers.length + (isCurrentUserMatch ? 1 : 0) : usersList.length + 1}
         </span>
       </div>
 
@@ -302,7 +350,7 @@ export default function Sidebar({
         {/* Current user (you) */}
         {isCurrentUserMatch && (
           <div
-            onClick={() => setSelectedUserModal({ ...currentUser, isMe: true })}
+            onClick={() => setSelectedUserModal({ ...currentUser, isMe: true, isOnline: true })}
             className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border border-emerald-500/20 mb-1 cursor-pointer hover:border-emerald-500/40 transition-all shadow-sm group"
           >
             <div className="relative shrink-0">
@@ -323,17 +371,18 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* Other online users */}
+        {/* Other registered & online users */}
         {filteredUsers.length === 0 && !isCurrentUserMatch ? (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
             <Search className="w-10 h-10 text-[var(--text-secondary)] mb-3 opacity-30 animate-pulse" />
             <p className="text-xs text-[var(--text-secondary)] font-medium">No users found</p>
-            <p className="text-[10px] text-[var(--text-secondary)] mt-1 opacity-60">Try searching another name or username</p>
+            <p className="text-[10px] text-[var(--text-secondary)] mt-1 opacity-60">Try searching another name, username, or email</p>
           </div>
         ) : (
           filteredUsers.map(user => {
             const isUserActive = activeChatTarget && activeChatTarget.id === user.id;
             const unread = unreadCounts[user.id] || 0;
+            const isUserOnline = !!user.isOnline;
 
             return (
               <div
@@ -354,7 +403,11 @@ export default function Sidebar({
                     alt={user.name}
                     className="w-10 h-10 rounded-full object-cover group-hover:scale-105 transition-transform ring-2 ring-white/5"
                   />
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
+                  {isUserOnline ? (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" title="Online" />
+                  ) : (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 border-2 border-[var(--bg-secondary)]" title="Offline" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -363,9 +416,13 @@ export default function Sidebar({
                   }`}>
                     {user.name}
                   </p>
-                  <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
-                    <span>Online</span>
-                    {user.username && <span className="text-[var(--text-secondary)] font-normal">• @{user.username}</span>}
+                  <p className="text-[11px] flex items-center gap-1 font-medium truncate">
+                    {isUserOnline ? (
+                      <span className="text-emerald-400 font-semibold">Online</span>
+                    ) : (
+                      <span className="text-slate-400 font-normal">Saved Contact</span>
+                    )}
+                    {user.username && <span className="text-[var(--text-secondary)] font-normal truncate">• {user.username}</span>}
                   </p>
                 </div>
 
@@ -414,14 +471,27 @@ export default function Sidebar({
               className="w-20 h-20 rounded-full object-cover mx-auto ring-4 ring-[var(--bg-accent)]/30 mb-3"
             />
             <h3 className="text-lg font-bold text-[var(--text-primary)]">{selectedUserModal.name}</h3>
-            <p className="text-xs text-[var(--bg-accent)] font-medium mb-2">
-              {selectedUserModal.isMe ? 'You' : (selectedUserModal.username ? `@${selectedUserModal.username}` : 'Verified User')}
+            <p className="text-xs text-[var(--bg-accent)] font-medium mb-1">
+              {selectedUserModal.isMe ? 'You' : (selectedUserModal.username ? `@${selectedUserModal.username.replace('@', '')}` : 'Verified User')}
             </p>
+            {selectedUserModal.email && (
+              <p className="text-[11px] text-slate-400 mb-2 truncate">{selectedUserModal.email}</p>
+            )}
+            {selectedUserModal.bio && (
+              <p className="text-xs text-slate-300 italic mb-3 px-2">"{selectedUserModal.bio}"</p>
+            )}
             
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-medium mb-4">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Online & Ready to Chat
-            </div>
+            {selectedUserModal.isOnline || selectedUserModal.isMe ? (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-medium mb-4">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Online & Ready to Chat
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800/80 border border-slate-700/60 rounded-full text-xs text-slate-300 font-medium mb-4">
+                <span className="w-2 h-2 rounded-full bg-slate-500" />
+                Saved Contact • Offline
+              </div>
+            )}
 
             {!selectedUserModal.isMe && (
               <button

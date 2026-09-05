@@ -8,6 +8,19 @@ export const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=250&q=80'
 ];
 
+export const DEFAULT_SAVED_USERS = [
+  {
+    id: 'user_1787925441894_5ssf',
+    name: 'sonu panigrahi',
+    username: '@mcsonu143',
+    email: 'mcsonu143@gmail.com',
+    phone: '',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    bio: '🔒 Protected by SecureChat Guard',
+    status: 'online',
+    isOnline: false
+  }
+];
 
 export const DEFAULT_SETTINGS = {
   linkSecurity: 'strict',

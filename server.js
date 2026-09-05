@@ -1,42 +1,56 @@
 import express from 'express';
+import dotenv from 'dotenv';
 import { createHash, randomBytes } from 'crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  initDatabase,
+  getAllUsers,
+  searchUsersInDb,
+  getUserByEmail,
+  createUser,
+  updateUserPassword,
+  upsertUser,
+  updateUserProfile,
+  getAllMessages,
+  saveMessage,
+  getDbHealth
+} from './db.js';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const DATA_DIR = join(__dirname, 'data');
-const USERS_FILE = join(DATA_DIR, 'users.json');
-const MESSAGES_FILE = join(DATA_DIR, 'messages.json');
-
-// Ensure data directory exists
-if (!existsSync(DATA_DIR)) {
-  mkdirSync(DATA_DIR, { recursive: true });
-}
-
-// Ensure users.json and messages.json exist
-if (!existsSync(USERS_FILE)) {
-  writeFileSync(USERS_FILE, '[]', 'utf-8');
-}
-if (!existsSync(MESSAGES_FILE)) {
-  writeFileSync(MESSAGES_FILE, '[]', 'utf-8');
-}
 
 // ── Middleware ──
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// In-memory active presence tracking across devices
+const activePresenceMap = new Map(); // userId -> { user, lastSeen }
+const PRESENCE_TIMEOUT_MS = 8000;
+
+function cleanStalePresence() {
+  const now = Date.now();
+  for (const [userId, record] of activePresenceMap.entries()) {
+    if (now - record.lastSeen > PRESENCE_TIMEOUT_MS) {
+      activePresenceMap.delete(userId);
+    }
+  }
+}
 
 // Serve static frontend files from dist/
 const distPath = join(__dirname, 'dist');
@@ -51,38 +65,11 @@ if (existsSync(distPath)) {
 }
 
 // ── Helpers ──
-function loadUsers() {
-  try {
-    const data = readFileSync(USERS_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(users) {
-  writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
-}
-
-function loadMessages() {
-  try {
-    const data = readFileSync(MESSAGES_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-function saveMessages(messages) {
-  writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2), 'utf-8');
-}
-
 function hashPassword(password) {
   return createHash('sha256').update(password).digest('hex');
 }
 
 function generatePassword() {
-  // Generate an 8-character alphanumeric password
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   const bytes = randomBytes(8);
   let password = '';
@@ -104,66 +91,79 @@ const AVATARS = [
 // ── API Routes ──
 
 /**
+ * GET /api/health/db
+ * Returns MySQL connection health status
+ */
+app.get('/api/health/db', (req, res) => {
+  res.json(getDbHealth());
+});
+
+/**
  * POST /api/auth/register
  * Body: { email, fullName }
  * Creates a new user with a generated permanent password.
- * Returns: { success: true, user, password }  (password shown once)
+ * Returns: { success: true, user, password } (password shown once)
  */
-app.post('/api/auth/register', (req, res) => {
-  const { email, fullName } = req.body;
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, fullName } = req.body;
 
-  if (!email || !email.trim()) {
-    return res.status(400).json({ error: 'Please enter a valid email address.' });
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+
+    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Invalid email address format.' });
+    }
+
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({ error: 'Please enter your full name.' });
+    }
+
+    // Check if email already exists in DB
+    const existingUser = await getUserByEmail(cleanEmail);
+    if (existingUser) {
+      return res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
+    }
+
+    // Generate permanent password
+    const plainPassword = generatePassword();
+    const hashedPassword = hashPassword(plainPassword);
+
+    const userTag = `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
+
+    const allUsers = await getAllUsers();
+    const avatar = AVATARS[allUsers.length % AVATARS.length];
+
+    const newUser = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: fullName.trim(),
+      username: userTag,
+      email: cleanEmail,
+      phone: '',
+      avatar,
+      bio: '🔒 Protected by SecureChat Guard',
+      status: 'online',
+      passwordHash: hashedPassword,
+      createdAt: new Date().toISOString()
+    };
+
+    await createUser(newUser);
+
+    // Return safe user without passwordHash
+    const { passwordHash, ...safeUser } = newUser;
+
+    res.status(201).json({
+      success: true,
+      user: safeUser,
+      password: plainPassword
+    });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'Internal server error during registration.' });
   }
-
-  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
-
-  if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
-    return res.status(400).json({ error: 'Invalid email address format.' });
-  }
-
-  if (!fullName || !fullName.trim()) {
-    return res.status(400).json({ error: 'Please enter your full name.' });
-  }
-
-  const users = loadUsers();
-
-  // Check if email already exists
-  const existingUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
-  if (existingUser) {
-    return res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
-  }
-
-  // Generate permanent password
-  const plainPassword = generatePassword();
-  const hashedPassword = hashPassword(plainPassword);
-
-  const userTag = `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')}`;
-
-  const user = {
-    id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    name: fullName.trim(),
-    username: userTag,
-    email: cleanEmail,
-    phone: '',
-    avatar: AVATARS[users.length % AVATARS.length],
-    bio: '🔒 Protected by SecureChat Guard',
-    status: 'online',
-    passwordHash: hashedPassword,
-    createdAt: new Date().toISOString()
-  };
-
-  users.push(user);
-  saveUsers(users);
-
-  // Return user data WITHOUT passwordHash, but WITH the plain password (shown once)
-  const { passwordHash, ...safeUser } = user;
-
-  res.status(201).json({
-    success: true,
-    user: safeUser,
-    password: plainPassword
-  });
 });
 
 /**
@@ -171,34 +171,38 @@ app.post('/api/auth/register', (req, res) => {
  * Body: { email, password }
  * Returns: { success: true, user }
  */
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !email.trim()) {
-    return res.status(400).json({ error: 'Please enter your email address.' });
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Please enter your email address.' });
+    }
+
+    if (!password || !password.trim()) {
+      return res.status(400).json({ error: 'Please enter your password.' });
+    }
+
+    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+    const user = await getUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(401).json({ error: 'No account found with this email. Please register first.' });
+    }
+
+    const inputHash = hashPassword(password.trim());
+    if (user.passwordHash !== inputHash) {
+      return res.status(401).json({ error: 'Incorrect password. Please try again.' });
+    }
+
+    // Return user data WITHOUT passwordHash
+    const { passwordHash, ...safeUser } = user;
+
+    res.status(200).json({ success: true, user: safeUser });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error during login.' });
   }
-
-  if (!password || !password.trim()) {
-    return res.status(400).json({ error: 'Please enter your password.' });
-  }
-
-  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
-  const users = loadUsers();
-
-  const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
-  if (!user) {
-    return res.status(401).json({ error: 'No account found with this email. Please register first.' });
-  }
-
-  const inputHash = hashPassword(password.trim());
-  if (user.passwordHash !== inputHash) {
-    return res.status(401).json({ error: 'Incorrect password. Please try again.' });
-  }
-
-  // Return user data WITHOUT passwordHash
-  const { passwordHash, ...safeUser } = user;
-
-  res.status(200).json({ success: true, user: safeUser });
 });
 
 /**
@@ -207,74 +211,192 @@ app.post('/api/auth/login', (req, res) => {
  * Resets the user's password and generates a new permanent password.
  * Returns: { success: true, password: newPassword }
  */
-app.post('/api/auth/reset-password', (req, res) => {
-  const { email } = req.body;
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { email } = req.body;
 
-  if (!email || !email.trim()) {
-    return res.status(400).json({ error: 'Please enter your registered email address.' });
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Please enter your registered email address.' });
+    }
+
+    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+    const user = await getUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({ error: 'No account found with this email. Click "Register" to create a new account.' });
+    }
+
+    // Generate new permanent password
+    const newPassword = generatePassword();
+    const hashedPassword = hashPassword(newPassword);
+
+    await updateUserPassword(cleanEmail, hashedPassword);
+
+    res.status(200).json({
+      success: true,
+      message: 'Your password has been reset successfully.',
+      password: newPassword
+    });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Internal server error during password reset.' });
   }
-
-  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
-  const users = loadUsers();
-
-  const userIndex = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);
-  if (userIndex === -1) {
-    return res.status(404).json({ error: 'No account found with this email. Click "Register" to create a new account.' });
-  }
-
-  // Generate new permanent password
-  const newPassword = generatePassword();
-  const hashedPassword = hashPassword(newPassword);
-
-  users[userIndex].passwordHash = hashedPassword;
-  users[userIndex].updatedAt = new Date().toISOString();
-  saveUsers(users);
-
-  res.status(200).json({
-    success: true,
-    message: 'Your password has been reset successfully.',
-    password: newPassword
-  });
 });
 
 /**
  * GET /api/users
  */
-app.get('/api/users', (req, res) => {
-  const users = loadUsers().map(({ passwordHash, ...u }) => u);
-  res.json({ users });
+app.get('/api/users', async (req, res) => {
+  try {
+    cleanStalePresence();
+    const rawUsers = await getAllUsers();
+    const users = rawUsers.map(({ passwordHash, ...u }) => {
+      const isOnline = activePresenceMap.has(u.id);
+      const activeData = activePresenceMap.get(u.id)?.user;
+      return {
+        ...u,
+        ...(activeData || {}),
+        isOnline
+      };
+    });
+    res.json({ users, onlineUserIds: Array.from(activePresenceMap.keys()) });
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).json({ error: 'Failed to retrieve users.' });
+  }
+});
+
+/**
+ * GET /api/users/search?q=...
+ * Searches registered users across database
+ */
+app.get('/api/users/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    cleanStalePresence();
+    const rawUsers = await searchUsersInDb(q);
+    const users = rawUsers.map(({ passwordHash: _discarded, ...u }) => {
+      const isOnline = activePresenceMap.has(u.id);
+      const activeData = activePresenceMap.get(u.id)?.user;
+      return {
+        ...u,
+        ...(activeData || {}),
+        isOnline
+      };
+    });
+    res.json({ users });
+  } catch (err) {
+    console.error('User search error:', err);
+    res.status(500).json({ error: 'Failed to search users.' });
+  }
+});
+
+/**
+ * POST /api/users/sync
+ * Upserts a user in the server database (e.g. registered locally/offline or profile updated)
+ */
+app.post('/api/users/sync', async (req, res) => {
+  try {
+    const { user } = req.body;
+    if (!user || !user.id || !user.name) {
+      return res.status(400).json({ error: 'Valid user object required.' });
+    }
+
+    await upsertUser({
+      ...user,
+      passwordHash: user.passwordHash || hashPassword('12345678')
+    });
+
+    activePresenceMap.set(user.id, { user, lastSeen: Date.now() });
+    cleanStalePresence();
+
+    const rawUsers = await getAllUsers();
+    const safeUsers = rawUsers.map(({ passwordHash, ...u }) => ({
+      ...u,
+      isOnline: activePresenceMap.has(u.id)
+    }));
+
+    res.status(200).json({ success: true, users: safeUsers });
+  } catch (err) {
+    console.error('Sync error:', err);
+    res.status(500).json({ error: 'Failed to sync user.' });
+  }
+});
+
+/**
+ * POST /api/presence/heartbeat
+ * Records live cross-device user presence and profile updates
+ */
+app.post('/api/presence/heartbeat', async (req, res) => {
+  try {
+    const { user } = req.body;
+    if (!user || !user.id) {
+      return res.status(400).json({ error: 'Valid user object required.' });
+    }
+
+    activePresenceMap.set(user.id, { user, lastSeen: Date.now() });
+
+    // Sync profile updates to DB if needed
+    if (user.name || user.avatar || user.bio !== undefined) {
+      await updateUserProfile(user.id, {
+        name: user.name,
+        avatar: user.avatar,
+        bio: user.bio
+      });
+    }
+
+    cleanStalePresence();
+    res.json({ success: true, onlineUserIds: Array.from(activePresenceMap.keys()) });
+  } catch (err) {
+    console.error('Heartbeat error:', err);
+    res.status(500).json({ error: 'Heartbeat error.' });
+  }
+});
+
+/**
+ * POST /api/presence/leave
+ */
+app.post('/api/presence/leave', (req, res) => {
+  const { userId } = req.body;
+  if (userId) {
+    activePresenceMap.delete(userId);
+  }
+  res.json({ success: true });
 });
 
 /**
  * GET /api/messages
  */
-app.get('/api/messages', (req, res) => {
-  const messages = loadMessages();
-  res.json({ messages });
+app.get('/api/messages', async (req, res) => {
+  try {
+    const messages = await getAllMessages();
+    res.json({ messages });
+  } catch (err) {
+    console.error('Get messages error:', err);
+    res.status(500).json({ error: 'Failed to retrieve messages.' });
+  }
 });
 
 /**
  * POST /api/messages
  */
-app.post('/api/messages', (req, res) => {
-  const message = req.body;
-  if (!message || !message.id) {
-    return res.status(400).json({ error: 'Invalid message payload.' });
-  }
+app.post('/api/messages', async (req, res) => {
+  try {
+    const message = req.body;
+    if (!message || !message.id) {
+      return res.status(400).json({ error: 'Invalid message payload.' });
+    }
 
-  const messages = loadMessages();
-  const existingIdx = messages.findIndex(m => m.id === message.id);
-  if (existingIdx !== -1) {
-    messages[existingIdx] = { ...messages[existingIdx], ...message };
-  } else {
-    messages.push(message);
+    const saved = await saveMessage(message);
+    res.status(201).json({ message: saved });
+  } catch (err) {
+    console.error('Save message error:', err);
+    res.status(500).json({ error: 'Failed to save message.' });
   }
-  saveMessages(messages);
-  res.status(201).json({ message });
 });
 
 // ── Catch-all: serve index.html for client-side routing ──
-app.get('*', (req, res) => {
+app.use((req, res) => {
   const indexPath = join(distPath, 'index.html');
   if (existsSync(indexPath)) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -284,8 +406,9 @@ app.get('*', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  const users = loadUsers();
+app.listen(PORT, async () => {
+  await initDatabase();
+  const users = await getAllUsers();
   console.log(`\n🔐 SecureChat Backend Server running on port ${PORT}`);
-  console.log(`📦 ${users.length} registered account(s) in database`);
+  console.log(`📦 ${users.length} registered account(s) loaded in system`);
 });

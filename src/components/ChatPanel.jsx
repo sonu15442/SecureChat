@@ -3,9 +3,11 @@ import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, 
 import { extractUrls, analyzeUrl } from '../utils/linkDetector';
 import { EMOJI_CATEGORIES } from '../utils/initialData';
 import { broadcastTyping, on } from '../utils/realtimeChannel';
+import { searchUsers } from '../utils/api';
 
 export default function ChatPanel({
   messages,
+  allUsers = [],
   activeChatTarget = 'global',
   onSelectChatTarget,
   onSendMessage,
@@ -82,7 +84,7 @@ export default function ChatPanel({
   }, [showEmojiPicker]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   };
 
   const handleFileChange = (e) => {
@@ -223,11 +225,51 @@ export default function ChatPanel({
 
   const totalOnline = onlineUsers.length + 1;
   const q = searchQuery.toLowerCase().trim();
+  const [serverMatchedUsers, setServerMatchedUsers] = useState([]);
 
-  // Search matches across users and messages
-  const matchedUsers = q ? [currentUser, ...onlineUsers].filter(u => 
-    u && ((u.name && u.name.toLowerCase().includes(q)) || (u.username && u.username.toLowerCase().includes(q)))
-  ) : [];
+  useEffect(() => {
+    if (!q) {
+      setServerMatchedUsers([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchUsers(q);
+        if (Array.isArray(results)) {
+          setServerMatchedUsers(results.filter(u => u && u.id !== currentUser?.id));
+        }
+      } catch {}
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [q, currentUser?.id]);
+
+  // Combine currentUser and allUsers/onlineUsers plus server results for comprehensive search
+  const baseUsers = currentUser
+    ? [currentUser, ...allUsers.filter(u => u.id !== currentUser.id)]
+    : allUsers;
+
+  const searchMap = new Map();
+  baseUsers.forEach(u => { if (u && u.id) searchMap.set(u.id, u); });
+  serverMatchedUsers.forEach(u => { if (u && u.id) searchMap.set(u.id, { ...searchMap.get(u.id), ...u }); });
+  const usersToSearch = Array.from(searchMap.values());
+
+  // Search matches across all saved/registered users and messages
+  const matchedUsers = q ? usersToSearch.filter(u => {
+    if (!u) return false;
+    const nameStr = (u.name || '').toLowerCase();
+    const usernameStr = (u.username || '').toLowerCase();
+    const cleanUsername = usernameStr.startsWith('@') ? usernameStr.slice(1) : usernameStr;
+    const emailStr = (u.email || '').toLowerCase();
+    const phoneStr = (u.phone || '').toLowerCase();
+    const cleanQuery = q.startsWith('@') ? q.slice(1) : q;
+    return (
+      nameStr.includes(q) ||
+      usernameStr.includes(q) ||
+      cleanUsername.includes(cleanQuery) ||
+      emailStr.includes(q) ||
+      phoneStr.includes(q)
+    );
+  }) : [];
 
   const matchedMessages = q ? displayedMessages.filter(m => 
     m.text && m.text.toLowerCase().includes(q)
@@ -280,7 +322,11 @@ export default function ChatPanel({
                   alt={targetUser?.name}
                   className="w-9 h-9 rounded-full object-cover border-2 border-[#0d1622]"
                 />
-                <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
+                {targetUser?.isOnline || onlineUsers.some(u => u.id === targetUser?.id) ? (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
+                ) : (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 border-2 border-[var(--bg-secondary)]" />
+                )}
               </div>
 
               <div>
@@ -290,7 +336,7 @@ export default function ChatPanel({
                 </h2>
                 <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
                   <span>Direct Encrypted Chat</span>
-                  {targetUser?.username && <span className="text-purple-300 font-normal">• @{targetUser.username}</span>}
+                  {targetUser?.username && <span className="text-purple-300 font-normal">• @{targetUser.username.replace('@', '')}</span>}
                 </p>
               </div>
             </div>
@@ -387,34 +433,46 @@ export default function ChatPanel({
                   <p className="text-xs text-[var(--text-secondary)] italic pl-2">No user matches found</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {matchedUsers.map(u => (
-                      <div
-                        key={u.id || u.username}
-                        onClick={() => {
-                          if (u.id !== currentUser.id && onSelectChatTarget) {
-                            onSelectChatTarget(u);
-                            setShowSearchHeader(false);
-                            setSearchQuery('');
-                          } else {
-                            setSearchedUserModal(u);
-                          }
-                        }}
-                        className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--bg-tertiary)]/70 hover:bg-[var(--bg-tertiary)] cursor-pointer transition group"
-                      >
-                        <img
-                          src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                          alt={u.name}
-                          className="w-7 h-7 rounded-full object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--bg-accent)] truncate">{u.name}</p>
-                          <p className="text-[10px] text-emerald-400">{u.id === currentUser.id ? 'You' : 'Click to Chat'}</p>
+                    {matchedUsers.map(u => {
+                      const isOnline = u.isOnline || onlineUsers.some(o => o.id === u.id);
+                      return (
+                        <div
+                          key={u.id || u.username}
+                          onClick={() => {
+                            if (u.id !== currentUser.id && onSelectChatTarget) {
+                              onSelectChatTarget(u);
+                              setShowSearchHeader(false);
+                              setSearchQuery('');
+                            } else {
+                              setSearchedUserModal(u);
+                            }
+                          }}
+                          className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--bg-tertiary)]/70 hover:bg-[var(--bg-tertiary)] cursor-pointer transition group"
+                        >
+                          <div className="relative shrink-0">
+                            <img
+                              src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                              alt={u.name}
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                            {isOnline ? (
+                              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400" />
+                            ) : (
+                              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-slate-500" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--bg-accent)] truncate">{u.name}</p>
+                            <p className="text-[10px] text-emerald-400 truncate">
+                              {u.id === currentUser.id ? 'You' : (isOnline ? 'Online • Click to Chat' : 'Saved • Click to Chat')}
+                            </p>
+                          </div>
+                          {u.id !== currentUser.id && (
+                            <MessageCircle className="w-4 h-4 text-[var(--bg-accent)] opacity-80 group-hover:scale-110 transition" />
+                          )}
                         </div>
-                        {u.id !== currentUser.id && (
-                          <MessageCircle className="w-3.5 h-3.5 text-[var(--bg-accent)] opacity-80" />
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -469,20 +527,35 @@ export default function ChatPanel({
               className="w-20 h-20 rounded-full object-cover mx-auto ring-4 ring-[var(--bg-accent)]/30 mb-3"
             />
             <h3 className="text-lg font-bold text-[var(--text-primary)]">{searchedUserModal.name}</h3>
-            <p className="text-xs text-[var(--bg-accent)] font-medium mb-2">
-              {searchedUserModal.id === currentUser.id ? 'You' : `@${searchedUserModal.username || 'user'}`}
+            <p className="text-xs text-[var(--bg-accent)] font-medium mb-1">
+              {searchedUserModal.id === currentUser.id ? 'You' : `@${(searchedUserModal.username || 'user').replace('@', '')}`}
             </p>
+            {searchedUserModal.email && (
+              <p className="text-[11px] text-slate-400 mb-2 truncate">{searchedUserModal.email}</p>
+            )}
+            {searchedUserModal.bio && (
+              <p className="text-xs text-slate-300 italic mb-3 px-2">"{searchedUserModal.bio}"</p>
+            )}
             
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-medium mb-4">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Online User
-            </div>
+            {searchedUserModal.isOnline || onlineUsers.some(o => o.id === searchedUserModal.id) || searchedUserModal.id === currentUser.id ? (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-medium mb-4">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Online & Ready to Chat
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800/80 border border-slate-700/60 rounded-full text-xs text-slate-300 font-medium mb-4">
+                <span className="w-2 h-2 rounded-full bg-slate-500" />
+                Saved Contact • Offline
+              </div>
+            )}
 
             {searchedUserModal.id !== currentUser.id && (
               <button
                 onClick={() => {
                   if (onSelectChatTarget) onSelectChatTarget(searchedUserModal);
                   setSearchedUserModal(null);
+                  setShowSearchHeader(false);
+                  setSearchQuery('');
                 }}
                 className="w-full py-2.5 mb-2 bg-[var(--bg-accent)] hover:bg-[var(--bg-accent-hover)] text-white text-xs font-bold rounded-xl transition shadow-lg flex items-center justify-center gap-2"
               >

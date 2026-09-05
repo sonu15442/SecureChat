@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Mail, User, ArrowRight, ShieldAlert, Loader2, CheckCircle2, Copy, KeyRound, LogIn, UserPlus, Eye, EyeOff, RotateCcw, ArrowLeft } from 'lucide-react';
 import { registerUser, loginUser, resetPassword } from '../utils/api';
+import { recordAction } from '../utils/testRecorder';
 
 export default function AuthModal({ onLogin }) {
   // Tab: 'login' | 'register' | 'forgot'
@@ -32,6 +33,14 @@ export default function AuthModal({ onLogin }) {
     setGeneratedPassword('');
     setRegisteredUser(null);
     setCopied(false);
+
+    if (tab === 'register') {
+      recordAction('Registration', 'User clicks register tab to open registration form');
+    } else if (tab === 'login') {
+      recordAction('Authentication', 'User switches to login view');
+    } else if (tab === 'forgot') {
+      recordAction('Authentication', 'User opens password reset dialog');
+    }
   };
 
   // ── Register ──
@@ -42,10 +51,12 @@ export default function AuthModal({ onLogin }) {
     const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
     if (!cleanEmail) {
       setError('Please enter your email address.');
+      recordAction('Input Validation', 'User cannot submit registration with an empty email');
       return;
     }
     if (!fullName.trim()) {
       setError('Please enter your full name.');
+      recordAction('Input Validation', 'User cannot submit registration with an empty full name');
       return;
     }
 
@@ -57,8 +68,12 @@ export default function AuthModal({ onLogin }) {
       setRegisteredUser(result.user);
       setPasswordTitle('Account Created!');
       setPasswordGeneratedState(true);
+      recordAction('Registration', 'User enters full name and email in registration form');
+      recordAction('Registration', 'User submits registration and creates new account');
+      recordAction('Registration', 'User verifies account credentials and generated secure password');
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
+      recordAction('Registration', `User sees registration validation notice: ${err.message || 'Registration failed'}`);
     } finally {
       setLoading(false);
     }
@@ -72,10 +87,12 @@ export default function AuthModal({ onLogin }) {
     const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
     if (!cleanEmail) {
       setError('Please enter your email address.');
+      recordAction('Authentication', 'User cannot submit login with an empty email');
       return;
     }
     if (!password.trim()) {
       setError('Please enter your password.');
+      recordAction('Authentication', 'User cannot submit login with an empty password');
       return;
     }
 
@@ -85,9 +102,12 @@ export default function AuthModal({ onLogin }) {
       const result = await loginUser(cleanEmail, password);
       const userData = result.user;
       localStorage.setItem('securechat_user', JSON.stringify(userData));
+      recordAction('Authentication', 'User logs in with valid email and password');
+      recordAction('Session Management', 'User session token established and profile loaded');
       onLogin(userData);
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
+      recordAction('Authentication', 'User sees an error for invalid login credentials');
     } finally {
       setLoading(false);
     }
@@ -101,6 +121,7 @@ export default function AuthModal({ onLogin }) {
     const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
     if (!cleanEmail) {
       setError('Please enter your registered email address.');
+      recordAction('Authentication', 'User cannot submit password reset with an empty email');
       return;
     }
 
@@ -112,8 +133,10 @@ export default function AuthModal({ onLogin }) {
       setRegisteredUser(null);
       setPasswordTitle('New Password Generated!');
       setPasswordGeneratedState(true);
+      recordAction('Authentication', 'User resets password and receives new generated credentials');
     } catch (err) {
       setError(err.message || 'Password reset failed. Please check your email and try again.');
+      recordAction('Authentication', 'User sees password reset error notice');
     } finally {
       setLoading(false);
     }
@@ -122,9 +145,11 @@ export default function AuthModal({ onLogin }) {
   // ── Continue after registration / reset ──
   const handleContinueAfterPassword = () => {
     if (registeredUser) {
+      recordAction('Authentication', 'User completes registration credential review and enters chat');
       localStorage.setItem('securechat_user', JSON.stringify(registeredUser));
       onLogin(registeredUser);
     } else {
+      recordAction('Authentication', 'User pre-fills reset credentials and proceeds to sign in');
       // Switched from password reset -> pre-fill password into sign in form
       setPassword(generatedPassword);
       setPasswordGeneratedState(false);
@@ -133,6 +158,7 @@ export default function AuthModal({ onLogin }) {
   };
 
   const handleCopyPassword = async () => {
+    recordAction('Registration', 'User copies generated secure password to clipboard');
     try {
       await navigator.clipboard.writeText(generatedPassword);
       setCopied(true);
@@ -293,7 +319,12 @@ export default function AuthModal({ onLogin }) {
                   type="email"
                   placeholder="e.g. alex@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (e.target.value.length > 2) {
+                      recordAction('Authentication', 'User enters email in login field');
+                    }
+                  }}
                   className="w-full bg-gray-900/90 text-white placeholder:text-gray-500 text-sm pl-10 pr-4 py-2.5 rounded-xl border border-gray-800 focus:border-emerald-500 focus:outline-none transition-colors"
                   autoComplete="email"
                 />
@@ -317,7 +348,12 @@ export default function AuthModal({ onLogin }) {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (e.target.value.length > 2) {
+                      recordAction('Authentication', 'User enters password in login field');
+                    }
+                  }}
                   className="w-full bg-gray-900/90 text-white placeholder:text-gray-500 text-sm pl-10 pr-10 py-2.5 rounded-xl border border-gray-800 focus:border-emerald-500 focus:outline-none transition-colors font-mono"
                   autoComplete="current-password"
                 />
@@ -373,7 +409,12 @@ export default function AuthModal({ onLogin }) {
                   type="email"
                   placeholder="e.g. alex@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (e.target.value.length > 2) {
+                      recordAction('Registration', 'User enters valid email address in registration form');
+                    }
+                  }}
                   className="w-full bg-gray-900/90 text-white placeholder:text-gray-500 text-sm pl-10 pr-4 py-2.5 rounded-xl border border-gray-800 focus:border-emerald-500 focus:outline-none transition-colors"
                   autoComplete="email"
                 />
@@ -388,7 +429,12 @@ export default function AuthModal({ onLogin }) {
                   type="text"
                   placeholder="e.g. Alex Rivera"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (e.target.value.length > 2) {
+                      recordAction('Registration', 'User enters full name in registration form');
+                    }
+                  }}
                   className="w-full bg-gray-900/90 text-white placeholder:text-gray-500 text-sm pl-10 pr-4 py-2.5 rounded-xl border border-gray-800 focus:border-emerald-500 focus:outline-none transition-colors"
                   autoComplete="name"
                 />
