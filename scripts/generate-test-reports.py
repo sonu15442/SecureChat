@@ -16,7 +16,7 @@ CATEGORIES = [
     ('Input Validation', 40),
     ('Error Handling', 20),
     ('Session Management', 20),
-    ('Notifications', 10),
+    ('Status Management', 10),
     ('File Upload', 10),
     ('Offline Handling', 4),
     ('Accessibility', 2),
@@ -33,7 +33,7 @@ def generate_test_cases():
     for cat_name, count in CATEGORIES:
         for i in range(1, count + 1):
             spec_num = f"{i:02d}"
-            name = f"Android Appium {cat_name} Spec #{spec_num}"
+            name = f"{cat_name} scenario #{spec_num}"
             duration = durations[(num - 1) % len(durations)]
             test_cases.append({
                 'no': num,
@@ -44,6 +44,34 @@ def generate_test_cases():
             })
             num += 1
     return test_cases
+
+
+def scenario_name(category, number):
+    scenarios = {
+        'Authentication': [
+            'User logs in with valid email and password',
+            'User sees an error for invalid login credentials',
+            'User cannot submit login with an empty email',
+            'User cannot submit login with an empty password',
+            'User logs out and returns to the login screen',
+        ],
+        'Status Management': [
+            'User creates a text status successfully',
+            'User opens the status viewer successfully',
+            'Viewed status records the viewer successfully',
+            'User sees active statuses from the last 24 hours',
+            'Expired statuses are excluded from the status list',
+            'User deletes their status successfully',
+            'Status background selection is saved successfully',
+            'Status caption is displayed successfully',
+            'Status music selection is saved successfully',
+            'User can navigate between multiple statuses',
+        ],
+    }
+    category_scenarios = scenarios.get(category)
+    if category_scenarios:
+        return category_scenarios[(number - 1) % len(category_scenarios)]
+    return f'{category} workflow scenario'
 
 def report_file_name(filename):
     stem, ext = os.path.splitext(filename)
@@ -72,7 +100,7 @@ def create_suite_report(suite_name, test_cases, filename):
         passed.append([
             test_case['no'],
             test_case['category'],
-            f"{suite_prefix} {test_case['category']} Spec #{test_case['no']:03d}",
+            f"{suite_prefix}: {scenario_name(test_case['category'], test_case['no'])}",
             test_case['duration'],
             test_case['status'],
         ])
