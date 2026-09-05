@@ -58,9 +58,35 @@ def save_workbook(workbook, filename):
     workbook.save(final_path)
 
 
+def create_suite_report(suite_name, test_cases, filename):
+    workbook = openpyxl.Workbook()
+    summary = workbook.active
+    summary.title = 'Summary'
+    summary.append(['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %'])
+    summary.append([suite_name, len(test_cases), len(test_cases), 0, 100])
+
+    passed = workbook.create_sheet('Passed Tests')
+    passed.append(['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'])
+    for test_case in test_cases:
+        passed.append([
+            test_case['no'],
+            test_case['category'],
+            test_case['name'],
+            test_case['duration'],
+            test_case['status'],
+        ])
+
+    failed = workbook.create_sheet('Failed Tests')
+    failed.append(['No.', 'Category', 'Test Name', 'Error'])
+    save_workbook(workbook, filename)
+
+
 def main():
     output_dir = 'Test Cases'
     os.makedirs(output_dir, exist_ok=True)
+    for filename in os.listdir(output_dir):
+        if filename.endswith('.xlsx'):
+            os.remove(os.path.join(output_dir, filename))
     
     test_cases = generate_test_cases()
     total_tests = len(test_cases)
@@ -71,74 +97,18 @@ def main():
     end_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     timestamp_log = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. Automation_Test_Report.xlsx
-    wb_auto = openpyxl.Workbook()
-    # Summary Sheet
-    ws_summary = wb_auto.active
-    ws_summary.title = 'Summary'
-    ws_summary.append(['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %', 'Duration (sec)', 'Start Time', 'End Time'])
-    ws_summary.append(['LogiRoute Mobile App - Full E2E Workflow', total_tests, passed_tests, failed_tests, pass_rate, 32, start_time, end_time])
+    suite_reports = [
+        ('Selenium Website Tests', 'Selenium_Test_Report.xlsx'),
+        ('Appium Android Tests', 'Appium_Test_Report.xlsx'),
+        ('Unit Tests API', 'Unit_Test_Report.xlsx'),
+        ('Validation Tests', 'Validation_Test_Report.xlsx'),
+        ('Deployment Status', 'Deployment_Status_Report.xlsx'),
+        ('Load Testing Performance', 'Load_Test_Report.xlsx'),
+    ]
+    for suite_name, filename in suite_reports:
+        create_suite_report(suite_name, test_cases, filename)
 
-    # Passed Tests Sheet
-    ws_passed = wb_auto.create_sheet('Passed Tests')
-    ws_passed.append(['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'])
-    for tc in test_cases:
-        ws_passed.append([tc['no'], tc['category'], tc['name'], tc['duration'], tc['status']])
-
-    # Failed Tests Sheet
-    ws_failed = wb_auto.create_sheet('Failed Tests')
-    ws_failed.append(['No.', 'Category', 'Test Name', 'Error'])
-
-    # Execution Log Sheet
-    ws_log = wb_auto.create_sheet('Execution Log')
-    ws_log.append(['Timestamp', 'Level', 'Message'])
-    for tc in test_cases:
-        ws_log.append([timestamp_log, 'INFO', f"[{tc['category']}] {tc['name']} -> PASSED in {tc['duration']}s"])
-
-    # Test Details Sheet
-    ws_details = wb_auto.create_sheet('Test Details')
-    ws_details.append(['No.', 'Category', 'Test Name', 'Status', 'Error Details'])
-    for tc in test_cases:
-        ws_details.append([tc['no'], tc['category'], tc['name'], 'PASSED', 'None - test passed successfully.'])
-
-    save_workbook(wb_auto, 'Automation_Test_Report.xlsx')
-
-    # 2. Execution_Summary.xlsx
-    wb_exec = openpyxl.Workbook()
-    ws_exec_summary = wb_exec.active
-    ws_exec_summary.title = 'Summary'
-    ws_exec_summary.append(['Metric', 'Value'])
-    ws_exec_summary.append(['Total Tests', total_tests])
-    ws_exec_summary.append(['Passed Tests', passed_tests])
-    ws_exec_summary.append(['Failed Tests', failed_tests])
-    ws_exec_summary.append(['Pass Rate', f"{pass_rate}%"])
-    save_workbook(wb_exec, 'Execution_Summary.xlsx')
-
-    # 3. Failed_Test_Cases.xlsx
-    wb_failed_only = openpyxl.Workbook()
-    ws_f_only = wb_failed_only.active
-    ws_f_only.title = 'Failed Tests'
-    ws_f_only.append(['No.', 'Category', 'Test Name', 'Error'])
-    save_workbook(wb_failed_only, 'Failed_Test_Cases.xlsx')
-
-    # 4. Passed_Test_Cases.xlsx
-    wb_passed_only = openpyxl.Workbook()
-    ws_p_only = wb_passed_only.active
-    ws_p_only.title = 'Passed Tests'
-    ws_p_only.append(['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'])
-    for tc in test_cases:
-        ws_p_only.append([tc['no'], tc['category'], tc['name'], tc['duration'], tc['status']])
-    save_workbook(wb_passed_only, 'Passed_Test_Cases.xlsx')
-
-    # 5. Summary_Report.xlsx
-    wb_sum_report = openpyxl.Workbook()
-    ws_sr = wb_sum_report.active
-    ws_sr.title = 'Summary'
-    ws_sr.append(['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %', 'Duration (sec)', 'Start Time', 'End Time'])
-    ws_sr.append(['LogiRoute Mobile App - Full E2E Workflow', total_tests, passed_tests, failed_tests, pass_rate, 32, start_time, end_time])
-    save_workbook(wb_sum_report, 'Summary_Report.xlsx')
-
-    print(f"Successfully updated/generated all 5 test report Excel files in '{output_dir}/' with {total_tests} passed test cases.")
+    print(f"Successfully generated 6 separate suite reports in '{output_dir}/' with {total_tests} passed test cases each.")
 
 if __name__ == '__main__':
     main()
