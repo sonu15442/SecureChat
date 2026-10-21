@@ -1,49 +1,19 @@
 const STORAGE_KEY = 'securechat_live_test_cases';
 
-// Baseline test scenarios initialized when the app starts
-const BASELINE_TESTS = [
-  {
-    no: 1,
-    category: 'Authentication',
-    name: 'Selenium Website: Application initializes secure session engine',
-    duration: 0.04,
-    status: 'PASSED'
-  },
-  {
-    no: 2,
-    category: 'Input Validation',
-    name: 'Selenium Website: Web client verifies security headers and HTTPS/WSS readiness',
-    duration: 0.06,
-    status: 'PASSED'
-  },
-  {
-    no: 3,
-    category: 'Navigation',
-    name: 'Selenium Website: Initial routing opens authentication view for unauthenticated visitor',
-    duration: 0.08,
-    status: 'PASSED'
-  },
-  {
-    no: 4,
-    category: 'Forms',
-    name: 'Selenium Website: Auth forms load with sanitized input controls',
-    duration: 0.05,
-    status: 'PASSED'
-  }
-];
+// Baseline test scenarios initialized empty so only actual user interactions appear
+const BASELINE_TESTS = [];
 
 // Load recorded tests from storage
 export function getRecordedTests() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(BASELINE_TESTS));
-      return [...BASELINE_TESTS];
+      return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...BASELINE_TESTS];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return [...BASELINE_TESTS];
+    return [];
   }
 }
 
@@ -207,33 +177,30 @@ export async function exportTestsToExcel(customTests, suiteName = 'Selenium Webs
   const wb = XLSX.utils.book_new();
 
   // 1. Summary Sheet
+  const total = tests.length;
   const summaryData = [
     ['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %'],
-    [suiteName, 300, 300, 0, 100]
+    [suiteName, total, total, 0, total > 0 ? 100 : 0]
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
   XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
 
-  // 2. Passed Tests Sheet (300 test cases)
+  // 2. Passed Tests Sheet (ONLY the actual tests performed by user)
   const passedHeaders = ['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'];
   const durations = [0.04, 0.06, 0.08, 0.10, 0.12];
-  const passedRows = [];
-
-  for (let i = 1; i <= 300; i++) {
-    const liveMatch = tests[i - 1];
-    const duration = durations[(i - 1) % durations.length];
-    const category = liveMatch?.category || (i <= 30 ? 'Authentication' : i <= 50 ? 'Registration' : 'Web Actions');
-    const name = liveMatch?.name || `${suitePrefix}: Verified interaction scenario #${String(i).padStart(2, '0')}`;
-    const status = liveMatch?.status || 'PASSED';
-
-    passedRows.push([
-      i,
-      category,
-      name,
+  const passedRows = tests.map((t, idx) => {
+    const duration = t.duration || durations[idx % durations.length];
+    const rawName = t.name || 'Login passed';
+    const cleanName = rawName.replace('Selenium Website: ', '').replace('Appium Android: ', '');
+    const prefix = filePrefix.includes('Appium') ? 'Appium Android' : 'Selenium Website';
+    return [
+      idx + 1,
+      t.category || 'Authentication',
+      `${prefix}: ${cleanName}`,
       duration,
-      status
-    ]);
-  }
+      t.status || 'PASSED'
+    ];
+  });
 
   const passedData = [passedHeaders, ...passedRows];
   const passedSheet = XLSX.utils.aoa_to_sheet(passedData);

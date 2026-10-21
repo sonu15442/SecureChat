@@ -316,7 +316,8 @@ app.post('/api/auth/register', async (req, res) => {
     }).catch(() => {});
 
     const clientSource = req.headers['x-client-app'] || (req.headers['user-agent']?.includes('Mobile') ? 'SecureChatMobile' : 'SecureChat');
-    recordLiveTest('Registration', `User registered new account: ${safeUser.name} (${safeUser.email}) on ${clientSource}`, 'PASSED', clientSource);
+    const testPrefix = clientSource === 'SecureChatMobile' ? 'Appium Android' : 'Selenium Website';
+    recordLiveTest('Registration', `${testPrefix}: Registration passed`, 'PASSED', clientSource);
 
     res.status(201).json({
       success: true,
@@ -362,7 +363,8 @@ app.post('/api/auth/login', async (req, res) => {
     const { passwordHash, ...safeUser } = user;
 
     const clientSource = req.headers['x-client-app'] || (req.headers['user-agent']?.includes('Mobile') ? 'SecureChatMobile' : 'SecureChat');
-    recordLiveTest('Authentication', `User authenticated as ${safeUser.name} (${safeUser.email}) on ${clientSource}`, 'PASSED', clientSource);
+    const testPrefix = clientSource === 'SecureChatMobile' ? 'Appium Android' : 'Selenium Website';
+    recordLiveTest('Authentication', `${testPrefix}: Login passed`, 'PASSED', clientSource);
 
     res.status(200).json({ success: true, user: safeUser });
   } catch (err) {

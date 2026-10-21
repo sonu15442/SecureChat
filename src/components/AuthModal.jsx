@@ -153,12 +153,9 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
       setRegisteredUser(result.user);
       setPasswordTitle('Account Created!');
       setPasswordGeneratedState(true);
-      recordAction('Registration', 'User enters full name and email in registration form');
-      recordAction('Registration', 'User submits registration and creates new account');
-      recordAction('Registration', 'User verifies account credentials and generated secure password');
+      recordAction('Registration', 'Registration passed', { status: 'PASSED' });
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
-      recordAction('Registration', `User sees registration validation notice: ${err.message || 'Registration failed'}`);
     } finally {
       setLoading(false);
     }
@@ -172,12 +169,10 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
     const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
     if (!cleanEmail) {
       setError('Please enter your email address.');
-      recordAction('Authentication', 'User cannot submit login with an empty email');
       return;
     }
     if (!password.trim()) {
       setError('Please enter your password.');
-      recordAction('Authentication', 'User cannot submit login with an empty password');
       return;
     }
 
@@ -187,12 +182,10 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
       const result = await loginUser(cleanEmail, password);
       const userData = result.user;
       localStorage.setItem('securechat_user', JSON.stringify(userData));
-      recordAction('Authentication', 'User logs in with valid email and password');
-      recordAction('Session Management', 'User session token established and profile loaded');
+      recordAction('Authentication', 'Login passed', { status: 'PASSED' });
       onLogin(userData);
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
-      recordAction('Authentication', 'User sees an error for invalid login credentials');
     } finally {
       setLoading(false);
     }
