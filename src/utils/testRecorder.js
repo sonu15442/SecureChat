@@ -177,21 +177,12 @@ export async function exportTestsToExcel(customTests, suiteName = 'Selenium Webs
   // Create workbook
   const wb = XLSX.utils.book_new();
 
-  // 1. Summary Sheet
-  const total = tests.length;
-  const summaryData = [
-    ['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %'],
-    [suiteName, total, total, 0, total > 0 ? 100 : 0]
-  ];
-  const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
-  XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
-
-  // 2. Passed Tests Sheet (ONLY the actual tests performed by user)
+  // 1. Passed Tests Sheet (FIRST sheet so it is immediately active upon opening in Excel)
   const passedHeaders = ['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'];
   const durations = [0.04, 0.06, 0.08, 0.10, 0.12];
   const passedRows = tests.map((t, idx) => {
     const duration = t.duration || durations[idx % durations.length];
-    const rawName = t.name || 'Login passed';
+    const rawName = t.name || 'Login successful';
     const cleanName = rawName.replace('Selenium Website: ', '').replace('Appium Android: ', '');
     const prefix = filePrefix.includes('Appium') ? 'Appium Android' : 'Selenium Website';
     return [
@@ -217,12 +208,23 @@ export async function exportTestsToExcel(customTests, suiteName = 'Selenium Webs
 
   XLSX.utils.book_append_sheet(wb, passedSheet, 'Passed Tests');
 
+  // 2. Summary Sheet
+  const total = tests.length;
+  const summaryData = [
+    ['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %'],
+    [suiteName, total, total, 0, total > 0 ? 100 : 0]
+  ];
+  const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+  XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
   // 3. Failed Tests Sheet
   const failedData = [
     ['No.', 'Category', 'Test Name', 'Error']
   ];
   const failedSheet = XLSX.utils.aoa_to_sheet(failedData);
   XLSX.utils.book_append_sheet(wb, failedSheet, 'Failed Tests');
+
+  wb.Workbook = { Views: [{ ActiveTab: 0 }] };
 
   // Generate filename: <Prefix>_YYYYMMDD_HHMMSS_XXXXXX.xlsx
   const now = new Date();

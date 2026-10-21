@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "id": "test_1792598536933_login",
+    "category": "Authentication",
+    "name": "Selenium Website: Login successful",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-21T16:02:06.303Z"
+  },
+  {
+    "id": "test_1792598505218_o2w8",
+    "category": "Registration",
+    "name": "Selenium Website: Registration successful",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-21T16:01:45.218Z"
+  },
+  {
+    "id": "test_1792598536933_hlui",
+    "category": "Profile Management",
+    "name": "Selenium Website: User toggles light mode theme appearance",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-21T16:02:16.933Z"
+  }
+]

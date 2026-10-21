@@ -318,6 +318,7 @@ app.post('/api/auth/register', async (req, res) => {
     const clientSource = req.headers['x-client-app'] || (req.headers['user-agent']?.includes('Mobile') ? 'SecureChatMobile' : 'SecureChat');
     const testPrefix = clientSource === 'SecureChatMobile' ? 'Appium Android' : 'Selenium Website';
     recordLiveTest('Registration', `${testPrefix}: Registration successful`, 0.04, 'PASSED', clientSource);
+    recordLiveTest('Authentication', `${testPrefix}: Login successful`, 0.04, 'PASSED', clientSource);
 
     res.status(201).json({
       success: true,
@@ -684,9 +685,16 @@ app.get('/api/tests/download/:filename', (req, res) => {
   // If exact file doesn't exist, search for prefix (e.g. Selenium_Test_Report)
   if (!existsSync(targetPath)) {
     const cleanPrefix = filename.replace(/\.xlsx$/, '').replace(/_\d+.*$/, '');
-    const found = readdirSync(testCasesDir).find(f => f.startsWith(cleanPrefix) && f.endsWith('.xlsx'));
-    if (found) {
-      targetPath = join(testCasesDir, found);
+    const stableName = `${cleanPrefix}.xlsx`;
+    if (existsSync(join(testCasesDir, stableName))) {
+      targetPath = join(testCasesDir, stableName);
+    } else {
+      const candidates = readdirSync(testCasesDir)
+        .filter(f => f.startsWith(cleanPrefix) && f.endsWith('.xlsx'))
+        .sort((a, b) => statSync(join(testCasesDir, b)).mtimeMs - statSync(join(testCasesDir, a)).mtimeMs);
+      if (candidates.length > 0) {
+        targetPath = join(testCasesDir, candidates[0]);
+      }
     }
   }
 

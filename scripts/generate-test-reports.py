@@ -57,14 +57,9 @@ def create_suite_report(suite_name, live_records, filename):
 
     total = len(test_cases)
 
-    # 1. Summary Sheet
-    summary = workbook.active
-    summary.title = 'Summary'
-    summary.append(['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %'])
-    summary.append([suite_name, total, total, 0, 100 if total > 0 else 0])
-
-    # 2. Passed Tests Sheet (ONLY the live executed tests!)
-    passed = workbook.create_sheet('Passed Tests')
+    # 1. Passed Tests Sheet (Sheet 1 — opened by default in all Excel viewers)
+    passed = workbook.active
+    passed.title = 'Passed Tests'
     passed.append(['No.', 'Category', 'Test Name', 'Time (sec)', 'Status'])
     for test_case in test_cases:
         passed.append([
@@ -82,11 +77,16 @@ def create_suite_report(suite_name, live_records, filename):
     passed.column_dimensions['D'].width = 14
     passed.column_dimensions['E'].width = 12
 
+    # 2. Summary Sheet
+    summary = workbook.create_sheet('Summary')
+    summary.append(['Test Suite', 'Total Tests', 'Passed', 'Failed', 'Pass Rate %'])
+    summary.append([suite_name, total, total, 0, 100 if total > 0 else 0])
+
     # 3. Failed Tests Sheet
     failed = workbook.create_sheet('Failed Tests')
     failed.append(['No.', 'Category', 'Test Name', 'Error'])
     
-    # Set Passed Tests as the active sheet matching the user's screenshot
+    # Ensure Passed Tests is the active tab
     workbook.active = passed
 
     save_workbook(workbook, filename)

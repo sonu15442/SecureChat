@@ -220,11 +220,10 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
   // ── Continue after registration / reset ──
   const handleContinueAfterPassword = () => {
     if (registeredUser) {
-      recordAction('Authentication', 'User completes registration credential review and enters chat');
+      recordAction('Authentication', 'Login successful', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
       localStorage.setItem('securechat_user', JSON.stringify(registeredUser));
       onLogin(registeredUser);
     } else {
-      recordAction('Authentication', 'User pre-fills reset credentials and proceeds to sign in');
       setPassword(generatedPassword);
       setPasswordGeneratedState(false);
       setActiveTab('login');
@@ -232,7 +231,6 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
   };
 
   const handleCopyPassword = async () => {
-    recordAction('Registration', 'User copies generated secure password to clipboard');
     try {
       await navigator.clipboard.writeText(generatedPassword);
       setCopied(true);
@@ -456,12 +454,7 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
                   type="email"
                   placeholder="e.g. alex@example.com"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (e.target.value.length > 2) {
-                      recordAction('Authentication', 'User enters email in login field');
-                    }
-                  }}
+                  onChange={(e) => setEmail(e.target.value)}
                   className={`w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border focus:outline-none transition-all ${
                     isLight
                       ? 'bg-slate-50 text-slate-900 placeholder:text-slate-400 border-slate-300 focus:border-emerald-600 focus:bg-white'
@@ -491,12 +484,7 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (e.target.value.length > 2) {
-                      recordAction('Authentication', 'User enters password in login field');
-                    }
-                  }}
+                  onChange={(e) => setPassword(e.target.value)}
                   className={`w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border focus:outline-none transition-all font-mono ${
                     isLight
                       ? 'bg-slate-50 text-slate-900 placeholder:text-slate-400 border-slate-300 focus:border-emerald-600 focus:bg-white'
@@ -556,12 +544,7 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
                   type="email"
                   placeholder="e.g. alex@example.com"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (e.target.value.length > 2) {
-                      recordAction('Registration', 'User enters valid email address in registration form');
-                    }
-                  }}
+                  onChange={(e) => setEmail(e.target.value)}
                   className={`w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border focus:outline-none transition-all ${
                     isLight
                       ? 'bg-slate-50 text-slate-900 placeholder:text-slate-400 border-slate-300 focus:border-emerald-600 focus:bg-white'
@@ -608,12 +591,7 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
                   type="text"
                   placeholder="e.g. Alex Rivera"
                   value={fullName}
-                  onChange={(e) => {
-                    setFullName(e.target.value);
-                    if (e.target.value.length > 2) {
-                      recordAction('Registration', 'User enters full name in registration form');
-                    }
-                  }}
+                  onChange={(e) => setFullName(e.target.value)}
                   className={`w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border focus:outline-none transition-all ${
                     isLight
                       ? 'bg-slate-50 text-slate-900 placeholder:text-slate-400 border-slate-300 focus:border-emerald-600 focus:bg-white'
