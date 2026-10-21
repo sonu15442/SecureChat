@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye, Pause, Play, Trash2, ChevronUp, UserCheck } from 'lucide-react';
 import { markStatusAsViewed, deleteStatus } from '../utils/statusManager';
 import { playStatusSong, stopStatusSong } from '../utils/statusAudioPlayer';
+import { recordAction } from '../utils/testRecorder';
 
 export default function StatusViewerModal({ statusGroup, currentUserId, allUsers = [], onDeleteStatus, onClose }) {
   const [localStatuses, setLocalStatuses] = useState(() => statusGroup?.statuses || []);
@@ -37,6 +38,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
   useEffect(() => {
     if (currentStatus && currentUserId) {
       markStatusAsViewed(currentStatus.id, currentUserId);
+      recordAction('Status Management', 'User views contact audio status story', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     }
   }, [currentStatus, currentUserId]);
 

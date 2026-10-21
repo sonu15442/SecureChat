@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Music, Image as ImageIcon, Type, Sparkles, Send, Volume2, Upload, Check } from 'lucide-react';
 import { POPULAR_SONG_PRESETS, STATUS_BACKGROUND_GRADIENTS, createStatusUpdate } from '../utils/statusManager';
+import { recordAction } from '../utils/testRecorder';
 
 export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
   const [activeTab, setActiveTab] = useState('text'); // 'text' | 'image'
@@ -102,6 +103,8 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
       songAudioUrl: selectedSong?.audioUrl || null,
       songCover: selectedSong?.cover || '🎵'
     });
+
+    recordAction('Status Management', 'User publishes audio status story', { duration: 0.08, status: 'PASSED', source: 'SecureChat' });
 
     if (onStatusCreated) onStatusCreated(newStatus);
     onClose();

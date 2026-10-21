@@ -91,15 +91,15 @@ export function triggerReportRegeneration() {
     try {
       const scriptPath = join(__dirname, 'scripts', 'generate-test-reports.py');
       if (existsSync(scriptPath)) {
-        const py = spawn('python', [scriptPath], { stdio: 'ignore' });
+        const py = spawn('python', [scriptPath], { cwd: __dirname, stdio: 'ignore' });
         py.on('error', () => {
-          spawn('python3', [scriptPath], { stdio: 'ignore' });
+          spawn('python3', [scriptPath], { cwd: __dirname, stdio: 'ignore' });
         });
       }
     } catch (err) {
       console.error('Report regeneration trigger error:', err);
     }
-  }, 200);
+  }, 100);
 }
 
 export function recordLiveTest(category, name, duration = 0.04, status = 'PASSED', source = 'SecureChat') {

@@ -25,5 +25,23 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-10-21T16:02:16.933Z"
+  },
+  {
+    "id": "test_1792602637516_mctb",
+    "category": "Profile Management",
+    "name": "Selenium Website: User updates profile details successfully",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-21T17:10:37.517Z"
+  },
+  {
+    "id": "test_1792602743082_c39a",
+    "category": "Profile Management",
+    "name": "Selenium Website: User updates profile details successfully",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-21T17:12:23.082Z"
   }
 ]

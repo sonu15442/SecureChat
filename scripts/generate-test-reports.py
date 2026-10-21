@@ -15,19 +15,20 @@ def load_live_records():
             return []
     return []
 
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'Test Cases'))
+
 def report_file_name(filename):
     stem, ext = os.path.splitext(filename)
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
     return f"{stem}_{stamp}{ext}"
 
 def save_workbook(workbook, filename):
-    output_dir = 'Test Cases'
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     timestamped_name = report_file_name(filename)
-    final_path = os.path.join(output_dir, timestamped_name)
+    final_path = os.path.join(OUTPUT_DIR, timestamped_name)
     workbook.save(final_path)
     # Also save stable name for predictable downloads
-    stable_path = os.path.join(output_dir, filename)
+    stable_path = os.path.join(OUTPUT_DIR, filename)
     workbook.save(stable_path)
     return final_path
 
@@ -92,12 +93,11 @@ def create_suite_report(suite_name, live_records, filename):
     save_workbook(workbook, filename)
 
 def main():
-    output_dir = 'Test Cases'
-    os.makedirs(output_dir, exist_ok=True)
-    for filename in os.listdir(output_dir):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    for filename in os.listdir(OUTPUT_DIR):
         if filename.endswith('.xlsx'):
             try:
-                os.remove(os.path.join(output_dir, filename))
+                os.remove(os.path.join(OUTPUT_DIR, filename))
             except Exception:
                 pass
     
