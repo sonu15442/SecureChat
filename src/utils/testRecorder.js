@@ -91,12 +91,13 @@ export function recordAction(category, actionName, options = {}) {
   try {
     fetch('/api/tests/record', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Client-App': 'SecureChat' },
+      headers: { 'Content-Type': 'application/json', 'X-Client-App': options.source || 'SecureChat' },
       body: JSON.stringify({
         category: category || 'Authentication',
         name: fullTestName,
+        duration: newTest.duration,
         status,
-        source: 'SecureChat'
+        source: options.source || 'SecureChat'
       })
     }).catch(() => {});
   } catch {}

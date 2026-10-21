@@ -111,12 +111,8 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
     setRegisteredUser(null);
     setCopied(false);
 
-    if (tab === 'register') {
-      recordAction('Registration', 'User clicks register tab to open registration form');
-    } else if (tab === 'login') {
-      recordAction('Authentication', 'User switches to login view');
-    } else if (tab === 'forgot') {
-      recordAction('Authentication', 'User opens password reset dialog');
+    if (tab === 'login') {
+      // Tab switched
     }
   };
 
@@ -128,32 +124,31 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
     const cleanEmail = email.replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').trim().toLowerCase();
     if (!cleanEmail) {
       setError('Please enter your email address.');
-      recordAction('Input Validation', 'User cannot submit registration with an empty email');
       return;
     }
 
     const check = validateEmailFormat(cleanEmail);
     if (!check.valid) {
       setError(check.message || 'Please enter a valid, complete email address.');
-      recordAction('Input Validation', 'User entered invalid email format in registration');
       return;
     }
 
     if (!fullName.trim()) {
       setError('Please enter your full name.');
-      recordAction('Input Validation', 'User cannot submit registration with an empty full name');
       return;
     }
 
     setLoading(true);
+    const regStart = performance.now();
 
     try {
       const result = await registerUser(cleanEmail, fullName);
+      const timeTaken = Math.max(0.04, parseFloat(((performance.now() - regStart) / 1000).toFixed(2)));
       setGeneratedPassword(result.password);
       setRegisteredUser(result.user);
       setPasswordTitle('Account Created!');
       setPasswordGeneratedState(true);
-      recordAction('Registration', 'Registration passed', { status: 'PASSED' });
+      recordAction('Registration', 'Registration successful', { duration: timeTaken, status: 'PASSED', source: 'SecureChat' });
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {
@@ -177,12 +172,14 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme }) {
     }
 
     setLoading(true);
+    const loginStart = performance.now();
 
     try {
       const result = await loginUser(cleanEmail, password);
+      const timeTaken = Math.max(0.04, parseFloat(((performance.now() - loginStart) / 1000).toFixed(2)));
       const userData = result.user;
       localStorage.setItem('securechat_user', JSON.stringify(userData));
-      recordAction('Authentication', 'Login passed', { status: 'PASSED' });
+      recordAction('Authentication', 'Login successful', { duration: timeTaken, status: 'PASSED', source: 'SecureChat' });
       onLogin(userData);
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');

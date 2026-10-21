@@ -102,7 +102,7 @@ export function triggerReportRegeneration() {
   }, 200);
 }
 
-export function recordLiveTest(category, name, status = 'PASSED', source = 'SecureChat') {
+export function recordLiveTest(category, name, duration = 0.04, status = 'PASSED', source = 'SecureChat') {
   try {
     const dataDir = join(__dirname, 'data');
     if (!existsSync(dataDir)) {
@@ -124,14 +124,14 @@ export function recordLiveTest(category, name, status = 'PASSED', source = 'Secu
       id: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       category: category || 'Authentication',
       name: name.trim(),
+      duration: typeof duration === 'number' ? duration : 0.04,
       status,
       source,
       timestamp: new Date().toISOString()
     };
 
-    // Prepend so the newest user interaction is test #1 in its category
-    records.unshift(newRecord);
-    if (records.length > 100) records = records.slice(0, 100);
+    records.push(newRecord);
+    if (records.length > 200) records = records.slice(records.length - 200);
 
     writeFileSync(LIVE_TESTS_FILE, JSON.stringify(records, null, 2), 'utf-8');
 
@@ -317,7 +317,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     const clientSource = req.headers['x-client-app'] || (req.headers['user-agent']?.includes('Mobile') ? 'SecureChatMobile' : 'SecureChat');
     const testPrefix = clientSource === 'SecureChatMobile' ? 'Appium Android' : 'Selenium Website';
-    recordLiveTest('Registration', `${testPrefix}: Registration passed`, 'PASSED', clientSource);
+    recordLiveTest('Registration', `${testPrefix}: Registration successful`, 0.04, 'PASSED', clientSource);
 
     res.status(201).json({
       success: true,
@@ -336,6 +336,7 @@ app.post('/api/auth/register', async (req, res) => {
  * Returns: { success: true, user }
  */
 app.post('/api/auth/login', async (req, res) => {
+  const loginStartTime = Date.now();
   try {
     const { email, password } = req.body;
 
@@ -362,11 +363,12 @@ app.post('/api/auth/login', async (req, res) => {
     // Return user data WITHOUT passwordHash
     const { passwordHash, ...safeUser } = user;
 
+    const timeTaken = Math.max(0.04, parseFloat(((Date.now() - loginStartTime) / 1000).toFixed(2)));
     const clientSource = req.headers['x-client-app'] || (req.headers['user-agent']?.includes('Mobile') ? 'SecureChatMobile' : 'SecureChat');
     const testPrefix = clientSource === 'SecureChatMobile' ? 'Appium Android' : 'Selenium Website';
-    recordLiveTest('Authentication', `${testPrefix}: Login passed`, 'PASSED', clientSource);
+    recordLiveTest('Authentication', `${testPrefix}: Login successful`, timeTaken, 'PASSED', clientSource);
 
-    res.status(200).json({ success: true, user: safeUser });
+    res.status(200).json({ success: true, user: safeUser, timeTaken });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Internal server error during login.' });
@@ -638,9 +640,9 @@ app.post('/api/users/clear-all', async (req, res) => {
  * Dynamically records an interaction from SecureChat or SecureChatMobile
  */
 app.post('/api/tests/record', (req, res) => {
-  const { category, name, status = 'PASSED', source = 'SecureChat' } = req.body || {};
+  const { category, name, duration = 0.04, status = 'PASSED', source = 'SecureChat' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Test name required' });
-  recordLiveTest(category || 'Authentication', name, status, source);
+  recordLiveTest(category || 'Authentication', name, duration, status, source);
   res.json({ success: true, message: 'Action recorded in live test suite.' });
 });
 
