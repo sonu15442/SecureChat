@@ -1,81 +1,270 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, PhoneOff, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, PhoneOff, ShieldCheck, AlertCircle, PhoneForwarded } from 'lucide-react';
+import {
+  startOutgoingRingtone,
+  stopOutgoingRingtone,
+  playConnectedChime,
+  playEndedChime
+} from '../utils/callAudio';
 
-export default function VoiceCallModal({ onClose }) {
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+  ]
+};
+
+export default function VoiceCallModal({
+  call, // { callId, isCaller, caller, recipient, status }
+  onClose,
+  onSendSignal,
+  onEndCall,
+  incomingSignal // latest WebRTC signal for this call
+}) {
+  const isCaller = !!call?.isCaller;
+  const targetUser = isCaller ? (call?.recipient || {}) : (call?.caller || {});
+  const [callStatus, setCallStatus] = useState(call?.status || (isCaller ? 'ringing' : 'connected'));
+  
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [duration, setDuration] = useState(0);
-  const [audioLevel, setAudioLevel] = useState(0);
+  const [localAudioLevel, setLocalAudioLevel] = useState(0);
+  const [remoteAudioLevel, setRemoteAudioLevel] = useState(0);
   const [micError, setMicError] = useState(null);
-  const [micReady, setMicReady] = useState(false);
 
-  const streamRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const pcRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+
   const audioCtxRef = useRef(null);
-  const analyserRef = useRef(null);
   const animFrameRef = useRef(null);
+  const candidateQueue = useRef([]);
 
-  // Timer
+  // 1. Manage Outgoing Ringback Tone if caller
   useEffect(() => {
+    if (callStatus === 'ringing' && isCaller) {
+      startOutgoingRingtone();
+    } else {
+      stopOutgoingRingtone();
+    }
+    return () => {
+      stopOutgoingRingtone();
+    };
+  }, [callStatus, isCaller]);
+
+  // Sync prop status changes (e.g. peer accepted)
+  useEffect(() => {
+    if (call?.status && call.status !== callStatus) {
+      if (call.status === 'connected' && callStatus === 'ringing') {
+        playConnectedChime();
+      }
+      setCallStatus(call.status);
+    }
+  }, [call?.status, callStatus]);
+
+  // 2. Call duration timer when connected
+  useEffect(() => {
+    if (callStatus !== 'connected') return;
     const timer = setInterval(() => setDuration(prev => prev + 1), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [callStatus]);
 
-  // Real microphone access
+  // 3. WebRTC Peer Connection & Microphone Acquisition
   useEffect(() => {
     let cancelled = false;
 
-    async function startMic() {
+    async function initWebRTC() {
       try {
+        // Access user microphone
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-
-        streamRef.current = stream;
-        setMicReady(true);
-
-        // Setup audio analysis
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        audioCtxRef.current = audioCtx;
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.8;
-        source.connect(analyser);
-        analyserRef.current = analyser;
-
-        // Visualize audio levels
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        function updateLevel() {
-          analyser.getByteFrequencyData(dataArray);
-          const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-          setAudioLevel(avg / 255); // 0..1
-          animFrameRef.current = requestAnimationFrame(updateLevel);
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
         }
-        updateLevel();
+        localStreamRef.current = stream;
+
+        // Setup Audio Analyser for local voice visualization
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          const audioCtx = new AudioContextClass();
+          audioCtxRef.current = audioCtx;
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateLocalVoiceLevel = () => {
+            if (cancelled) return;
+            analyser.getByteFrequencyData(dataArray);
+            const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            setLocalAudioLevel(avg / 255);
+            animFrameRef.current = requestAnimationFrame(updateLocalVoiceLevel);
+          };
+          updateLocalVoiceLevel();
+        } catch {}
+
+        // Create Peer Connection
+        const pc = new RTCPeerConnection(RTC_CONFIG);
+        pcRef.current = pc;
+
+        // Add local tracks to peer connection
+        stream.getAudioTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
+
+        // Remote track received from peer (User 2 or User 1)
+        pc.ontrack = (event) => {
+          if (event.streams && event.streams[0]) {
+            remoteStreamRef.current = event.streams[0];
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.srcObject = event.streams[0];
+              remoteAudioRef.current.play().catch(() => {});
+            }
+          }
+        };
+
+        // Forward ICE candidates to peer
+        pc.onicecandidate = (event) => {
+          if (event.candidate && onSendSignal) {
+            onSendSignal({
+              type: 'ice_candidate',
+              candidate: event.candidate,
+              callId: call.callId,
+              targetId: targetUser.id
+            });
+          }
+        };
+
+        // If Caller and already answered or connected, initiate offer
+        if (isCaller) {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          if (onSendSignal) {
+            onSendSignal({
+              type: 'offer',
+              sdp: offer,
+              callId: call.callId,
+              targetId: targetUser.id
+            });
+          }
+        } else {
+          // If Callee, process any queued offer or candidates
+          processQueuedSignals();
+        }
       } catch (err) {
         if (!cancelled) {
-          setMicError(err.name === 'NotAllowedError'
-            ? 'Microphone access denied. Please allow mic permission.'
-            : 'Could not access microphone: ' + err.message);
+          setMicError(
+            err.name === 'NotAllowedError'
+              ? 'Microphone access denied. Please allow microphone permissions.'
+              : 'Could not access microphone: ' + err.message
+          );
         }
       }
     }
 
-    startMic();
+    initWebRTC();
 
     return () => {
       cancelled = true;
+      stopOutgoingRingtone();
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      if (audioCtxRef.current) audioCtxRef.current.close();
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
+      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
+      if (pcRef.current) pcRef.current.close();
     };
   }, []);
 
-  // Toggle mute
+  // Process any incoming WebRTC signals (offer, answer, ice_candidate)
+  const processQueuedSignals = async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    while (candidateQueue.current.length > 0) {
+      const cand = candidateQueue.current.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch {}
+    }
+  };
+
   useEffect(() => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
+    if (!incomingSignal || incomingSignal.callId !== call.callId) return;
+    const pc = pcRef.current;
+
+    async function handleSignal() {
+      try {
+        if (incomingSignal.type === 'call_accepted') {
+          setCallStatus('connected');
+          stopOutgoingRingtone();
+          playConnectedChime();
+          // Send offer if caller and not sent yet
+          if (isCaller && pc && !pc.currentRemoteDescription) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            if (onSendSignal) {
+              onSendSignal({
+                type: 'offer',
+                sdp: offer,
+                callId: call.callId,
+                targetId: targetUser.id
+              });
+            }
+          }
+        } else if (incomingSignal.type === 'offer' && !isCaller) {
+          if (!pc) return;
+          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
+          setCallStatus('connected');
+          stopOutgoingRingtone();
+          playConnectedChime();
+          processQueuedSignals();
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          if (onSendSignal) {
+            onSendSignal({
+              type: 'answer',
+              sdp: answer,
+              callId: call.callId,
+              targetId: targetUser.id
+            });
+          }
+        } else if (incomingSignal.type === 'answer' && isCaller) {
+          if (!pc) return;
+          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
+          setCallStatus('connected');
+          stopOutgoingRingtone();
+          playConnectedChime();
+          processQueuedSignals();
+        } else if (incomingSignal.type === 'ice_candidate') {
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(incomingSignal.candidate));
+          } else {
+            candidateQueue.current.push(incomingSignal.candidate);
+          }
+        }
+      } catch (err) {
+        console.warn('WebRTC signal processing warning:', err);
+      }
+    }
+
+    handleSignal();
+  }, [incomingSignal, isCaller, call.callId]);
+
+  // Toggle Mute
+  useEffect(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
     }
   }, [isMuted]);
+
+  // Toggle Speaker
+  useEffect(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = !isSpeakerOn;
+    }
+  }, [isSpeakerOn]);
 
   const formatTimer = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -83,106 +272,143 @@ export default function VoiceCallModal({ onClose }) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleEndCall = () => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (audioCtxRef.current) audioCtxRef.current.close();
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+  const handleEndCallAction = () => {
+    stopOutgoingRingtone();
+    playEndedChime();
+    if (onEndCall) onEndCall(call);
     onClose();
   };
 
-  // Generate 5 bar heights from audio level
+  // Generate 5 sound wave visualizer bars
+  const activeLevel = Math.max(localAudioLevel, remoteAudioLevel);
   const barHeights = [0.6, 1, 0.7, 0.9, 0.5].map(
-    mult => Math.max(8, (isMuted ? 0 : audioLevel) * mult * 80)
+    mult => Math.max(10, (isMuted ? 0 : activeLevel) * mult * 80)
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-lg animate-fade-in">
-      <div className="w-full max-w-sm glass-modal rounded-3xl p-8 flex flex-col items-center justify-between min-h-[500px] border border-emerald-500/20 shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
+      {/* Hidden HTML5 Audio Element for Remote Voice Output */}
+      <audio ref={remoteAudioRef} autoPlay playsInline />
+
+      <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center justify-between min-h-[520px] border border-emerald-500/30 bg-gradient-to-b from-[#091519] to-[#04080a] shadow-2xl relative overflow-hidden">
         
         {/* Encrypted Call Badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold">
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold relative z-10">
           <ShieldCheck className="w-3.5 h-3.5" />
-          End-to-End Encrypted Voice
+          <span>E2E Encrypted Voice Call</span>
         </div>
 
-        {/* Call Info */}
-        <div className="flex flex-col items-center text-center space-y-4 my-auto">
+        {/* User Avatar with WhatsApp Pulse Glow */}
+        <div className="flex flex-col items-center text-center space-y-4 my-auto relative z-10">
           <div className="relative">
-            {/* Glowing pulse based on audio level */}
+            {/* Audio level pulsing halo */}
             <div
-              className="absolute rounded-full bg-emerald-500/30 blur-md transition-all duration-100"
+              className="absolute -inset-4 rounded-full bg-emerald-500/30 blur-xl transition-all duration-100"
               style={{
-                inset: `${-8 - audioLevel * 20}px`,
-                opacity: isMuted ? 0.2 : 0.3 + audioLevel * 0.7,
+                opacity: isMuted ? 0.1 : 0.3 + activeLevel * 0.7,
+                transform: `scale(${1 + activeLevel * 0.3})`
               }}
             />
-            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-500/30 to-emerald-700/30 flex items-center justify-center relative border-4 border-emerald-500/40 shadow-xl">
-              <Mic className={`w-12 h-12 ${isMuted ? 'text-gray-500' : 'text-emerald-400'} transition-colors`} />
+            {callStatus === 'ringing' && (
+              <div className="absolute -inset-6 rounded-full border-2 border-emerald-400/40 animate-ping opacity-75" />
+            )}
+
+            <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-emerald-400/50 shadow-2xl relative bg-slate-800">
+              <img
+                src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                alt={targetUser?.name || 'Contact'}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
+                }}
+              />
             </div>
           </div>
 
           <div>
-            <h3 className="text-xl font-bold text-white">Voice Call</h3>
-            <p className="text-emerald-400 text-sm font-medium mt-1">{formatTimer(duration)}</p>
-            {micReady && (
-              <p className="text-[11px] text-gray-400 mt-1">
-                {isMuted ? '🔇 Microphone muted' : '🎙️ Microphone active'}
+            <h3 className="text-2xl font-black text-white tracking-tight">
+              {targetUser?.name || 'Contact'}
+            </h3>
+            
+            {callStatus === 'ringing' ? (
+              <p className="text-sm font-bold text-amber-400 mt-1 animate-pulse flex items-center justify-center gap-1.5">
+                <PhoneForwarded className="w-4 h-4 animate-bounce" />
+                <span>Ringing... waiting for user to pick up</span>
+              </p>
+            ) : (
+              <p className="text-emerald-400 text-sm font-mono font-bold mt-1">
+                Connected • {formatTimer(duration)}
               </p>
             )}
+
+            <p className="text-xs text-slate-400 font-mono mt-0.5">
+              {targetUser?.username || targetUser?.email || ''}
+            </p>
           </div>
 
-          {/* Mic Error */}
+          {/* Mic Error Banner if any */}
           {micError && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 max-w-[260px]">
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 max-w-[280px]">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{micError}</span>
             </div>
           )}
 
-          {/* Real Audio Visualizer */}
-          <div className="flex items-end justify-center gap-1.5 h-20">
-            {barHeights.map((h, i) => (
-              <div
-                key={i}
-                className="w-2 bg-emerald-400 rounded-full transition-all duration-100"
-                style={{ height: `${h}px`, opacity: isMuted ? 0.2 : 0.5 + audioLevel * 0.5 }}
-              />
-            ))}
-          </div>
+          {/* Real Audio Wave Visualizer */}
+          {callStatus === 'connected' && (
+            <div className="flex items-end justify-center gap-1.5 h-16 pt-2">
+              {barHeights.map((h, i) => (
+                <div
+                  key={i}
+                  className="w-2.5 bg-emerald-400 rounded-full transition-all duration-75 shadow-sm shadow-emerald-400/50"
+                  style={{ height: `${h}px`, opacity: isMuted ? 0.2 : 0.5 + activeLevel * 0.5 }}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Call Controls */}
-        <div className="w-full flex items-center justify-around gap-4 pt-4 border-t border-gray-800/60">
-          <button 
+        {/* WhatsApp Call Controls */}
+        <div className="flex items-center justify-center gap-5 w-full pt-4 relative z-10">
+          {/* Mute Button */}
+          <button
+            id="mute-mic-btn"
+            type="button"
             onClick={() => setIsMuted(!isMuted)}
-            className={`p-4 rounded-full transition-all ${
-              isMuted 
-                ? 'bg-red-500/20 text-red-400 border border-red-500/40' 
-                : 'bg-gray-800 text-white hover:bg-gray-700'
+            className={`p-4 rounded-2xl transition-all cursor-pointer ${
+              isMuted
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700'
             }`}
-            title={isMuted ? 'Unmute' : 'Mute'}
+            title={isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
           >
-            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+            {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
           </button>
 
-          <button 
-            onClick={handleEndCall}
-            className="p-5 bg-red-600 hover:bg-red-500 text-white rounded-full transition-all shadow-lg shadow-red-600/40 hover:scale-105 active:scale-95"
+          {/* End Call Button */}
+          <button
+            id="end-voice-call-btn"
+            type="button"
+            onClick={handleEndCallAction}
+            className="p-5 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-95 text-white shadow-xl shadow-red-600/40 transition-all cursor-pointer"
             title="End Call"
           >
-            <PhoneOff className="w-7 h-7" />
+            <PhoneOff className="w-6 h-6" />
           </button>
 
-          <button 
+          {/* Speaker Button */}
+          <button
+            id="toggle-speaker-btn"
+            type="button"
             onClick={() => setIsSpeakerOn(!isSpeakerOn)}
-            className={`p-4 rounded-full transition-all ${
-              !isSpeakerOn 
-                ? 'bg-gray-800 text-gray-500' 
-                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+            className={`p-4 rounded-2xl transition-all cursor-pointer ${
+              !isSpeakerOn
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700'
             }`}
-            title="Speaker"
+            title={isSpeakerOn ? 'Mute Speaker' : 'Enable Speaker'}
           >
-            {isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
+            {isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
           </button>
         </div>
 

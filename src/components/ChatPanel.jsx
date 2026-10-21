@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, CheckCheck, Lock, X, Users, Search, MessageCircle, ArrowLeft } from 'lucide-react';
+import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, CheckCheck, Lock, X, Users, Search, MessageCircle, ArrowLeft, HelpCircle, Info, Sparkles, MessageSquare, Radio, Shield, Sun, Moon } from 'lucide-react';
 import { extractUrls, analyzeUrl } from '../utils/linkDetector';
 import { EMOJI_CATEGORIES } from '../utils/initialData';
 import { broadcastTyping, on } from '../utils/realtimeChannel';
@@ -16,7 +16,9 @@ export default function ChatPanel({
   onOpenVideoCall,
   currentUser,
   onlineUsers,
-  onToggleMobileSidebar
+  onToggleMobileSidebar,
+  theme = 'light',
+  onToggleTheme
 }) {
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
@@ -29,6 +31,13 @@ export default function ChatPanel({
   const [showSearchHeader, setShowSearchHeader] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchedUserModal, setSearchedUserModal] = useState(null);
+  const [showGuideBanner, setShowGuideBanner] = useState(() => {
+    try {
+      return localStorage.getItem('securechat_guide_dismissed') !== 'true';
+    } catch {
+      return true;
+    }
+  });
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -354,35 +363,66 @@ export default function ChatPanel({
             </button>
           )}
 
+          {/* Where What Feature Guide Toggle */}
+          <button
+            onClick={() => setShowGuideBanner(prev => !prev)}
+            className={`px-2.5 py-1.5 rounded-xl transition-all border flex items-center gap-1.5 cursor-pointer shadow-sm ${
+              showGuideBanner
+                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold'
+                : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-700'
+            }`}
+            title="Toggle Feature Map & Where What Is Guide"
+          >
+            <HelpCircle className="w-4 h-4 text-cyan-400" />
+            <span className="hidden lg:inline text-xs font-semibold">Where What</span>
+          </button>
+
+          {/* Theme Toggle Button */}
+          {onToggleTheme && (
+            <button
+              onClick={onToggleTheme}
+              className="p-2.5 rounded-xl transition-all border cursor-pointer text-amber-500 dark:text-amber-400 bg-slate-200/80 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700/60 hover:bg-amber-500/10 shadow-sm"
+              title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            >
+              {theme === 'light' ? (
+                <Moon className="w-4 h-4 text-indigo-600" />
+              ) : (
+                <Sun className="w-4 h-4 text-amber-400" />
+              )}
+            </button>
+          )}
+
           {/* Search Icon Toggle Button */}
           <button
             id="search-toggle-btn"
             onClick={() => setShowSearchHeader(!showSearchHeader)}
-            className={`p-2.5 rounded-xl transition-all border ${
+            className={`p-2.5 rounded-xl transition-all border cursor-pointer ${
               showSearchHeader
                 ? 'text-cyan-300 bg-cyan-500/20 border-cyan-400/50 shadow-md'
-                : 'text-slate-300 bg-slate-800/60 border-slate-700/60 hover:bg-slate-700/80 hover:text-white'
+                : 'text-slate-700 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700/60 hover:bg-slate-300 dark:hover:bg-slate-700/80'
             }`}
             title="Search Users & Messages"
           >
-            <Search className="w-4 h-4 text-emerald-400" />
+            <Search className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
           </button>
 
           <button
             id="voice-call-btn"
-            onClick={onOpenVoiceCall}
-            className="p-2.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 rounded-xl transition shadow-sm hover:scale-105"
+            onClick={() => onOpenVoiceCall && onOpenVoiceCall(targetUser)}
+            className="px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 rounded-xl transition shadow-sm hover:scale-105 flex items-center gap-1.5 cursor-pointer"
             title="Voice Call"
           >
             <Phone className="w-4 h-4" />
+            <span className="hidden lg:inline text-xs font-bold">Voice Call</span>
           </button>
           <button 
             id="video-call-btn"
-            onClick={onOpenVideoCall}
-            className="p-2.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-400 rounded-xl transition shadow-sm hover:scale-105" 
+            onClick={() => onOpenVideoCall && onOpenVideoCall(targetUser)}
+            className="px-2.5 py-1.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-400 rounded-xl transition shadow-sm hover:scale-105 flex items-center gap-1.5 cursor-pointer" 
             title="HD Video Call"
           >
             <Video className="w-4 h-4" />
+            <span className="hidden lg:inline text-xs font-bold">Video Call</span>
           </button>
         </div>
       </div>
@@ -576,8 +616,77 @@ export default function ChatPanel({
 
       {/* ── Messages Area ── */}
       <div className="flex-1 overflow-y-auto px-4 py-4 chat-bg-pattern">
+        {/* 🗺️ Feature Map & Quick Guide ("Where What Is") */}
+        {showGuideBanner && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-br from-slate-900/90 via-[#0e1724]/95 to-slate-900/90 border border-cyan-500/40 shadow-xl animate-slide-down relative">
+            <div className="flex items-center justify-between mb-2.5 border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1 rounded-lg bg-cyan-500/20 text-cyan-300">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white">App Navigation & Feature Map ("Where What Is")</h3>
+                  <p className="text-[10px] text-slate-400">Everything at a glance — intuitive guide for everyone</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowGuideBanner(false);
+                  try { localStorage.setItem('securechat_guide_dismissed', 'true'); } catch {}
+                }}
+                className="text-[10px] font-bold text-slate-400 hover:text-white px-2 py-0.5 rounded-lg hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>Hide Guide</span>
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px] mb-0.5">
+                  <MessageSquare className="w-3 h-3" />
+                  <span>1. Chats & Contacts</span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-snug">
+                  Use <strong>Global Room</strong> for community or click any contact in the sidebar for private 1-on-1 chat.
+                </p>
+              </div>
+
+              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px] mb-0.5">
+                  <Shield className="w-3 h-3" />
+                  <span>2. AI Fraud Shield</span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-snug">
+                  Links sent in chat are auto-scanned. Switch to the <strong>AI Shield</strong> tab to test any URL.
+                </p>
+              </div>
+
+              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px] mb-0.5">
+                  <Phone className="w-3 h-3" />
+                  <span>3. Voice & Video Calls</span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-snug">
+                  Click the <strong>Voice Call</strong> or <strong>Video Call</strong> buttons above to start encrypted calls.
+                </p>
+              </div>
+
+              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-[11px] mb-0.5">
+                  <Radio className="w-3 h-3" />
+                  <span>4. Stories & Live Sync</span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-snug">
+                  Post 24h music updates in the <strong>Status</strong> tab. Realtime shared DB syncs Laptop and Mobile.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Encryption & Tick Legend Banner */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 font-medium">
             <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span>
@@ -603,14 +712,40 @@ export default function ChatPanel({
 
         <div className="space-y-3.5">
           {displayedMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <MessageCircle className="w-12 h-12 text-[var(--bg-accent)]/30 mb-3 animate-pulse" />
-              <p className="text-sm font-semibold text-[var(--text-primary)]">
-                {isGlobal ? 'No messages yet in Global Room' : `Start private chat with ${targetUser?.name}`}
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/15 via-purple-500/15 to-pink-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3 shadow-lg">
+                <MessageCircle className="w-7 h-7 animate-pulse" />
+              </div>
+              <p className="text-sm font-extrabold text-white">
+                {isGlobal ? 'Welcome to SecureChat Global Room!' : `Start your encrypted chat with ${targetUser?.name}`}
               </p>
-              <p className="text-xs text-[var(--text-secondary)] mt-1">
-                {isGlobal ? 'Say hi to everyone online!' : 'Messages sent here are private between you two.'}
+              <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                {isGlobal 
+                  ? 'Say hello to everyone online! Every message and link shared here is protected by the AI Fraud Shield.' 
+                  : 'Messages sent here are end-to-end encrypted directly between your devices.'}
               </p>
+
+              {/* Quick Starter Conversation Chips */}
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                <button
+                  onClick={() => setInputText('👋 Hello there!')}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs text-cyan-300 hover:text-white transition shadow-sm cursor-pointer"
+                >
+                  👋 Hello there!
+                </button>
+                <button
+                  onClick={() => setInputText('🔒 Is this conversation end-to-end encrypted?')}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs text-emerald-300 hover:text-white transition shadow-sm cursor-pointer"
+                >
+                  🔒 Encrypted chat?
+                </button>
+                <button
+                  onClick={() => setInputText('☕ Free for a quick voice or video call?')}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs text-purple-300 hover:text-white transition shadow-sm cursor-pointer"
+                >
+                  ☕ Free for a call?
+                </button>
+              </div>
             </div>
           ) : (
             displayedMessages.map((msg, idx) => {
@@ -810,7 +945,7 @@ export default function ChatPanel({
               value={inputText}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
+              placeholder="Type encrypted message or paste link to scan for fraud..."
               className="w-full bg-[#111c29]/90 text-white placeholder:text-slate-500 text-sm px-4 py-2.5 rounded-2xl border border-slate-700/80 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 focus:outline-none resize-none max-h-32 transition-all shadow-inner"
               style={{ minHeight: '42px' }}
             />
@@ -822,7 +957,7 @@ export default function ChatPanel({
             disabled={!inputText.trim() && !selectedImage}
             className={`p-2.5 rounded-xl transition-all duration-200 shrink-0 ${
               inputText.trim() || selectedImage
-                ? 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/30 hover:brightness-110 active:scale-95 font-bold'
+                ? 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/30 hover:brightness-110 active:scale-95 font-bold cursor-pointer'
                 : 'bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed'
             }`}
             title="Send"
@@ -831,10 +966,16 @@ export default function ChatPanel({
           </button>
         </div>
 
-        {/* Security footer */}
-        <div className="flex items-center justify-center gap-1 mt-2 text-[10px] text-[var(--text-secondary)] opacity-50">
-          <ShieldCheck className="w-3 h-3" />
-          <span>Protected by SecureChat Guard™ — Links auto-scanned</span>
+        {/* Security & Helper hints footer */}
+        <div className="flex items-center justify-between px-2 mt-2 text-[10px] text-slate-400">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>AI Phishing Guard Active</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline">Press <strong className="text-white font-mono">Enter ↵</strong> to send</span>
+            <span className="text-cyan-400 font-medium">256-bit Encrypted</span>
+          </div>
         </div>
       </div>
 

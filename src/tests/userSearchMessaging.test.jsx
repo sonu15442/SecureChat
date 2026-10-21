@@ -185,17 +185,23 @@ describe('Saved User Search & Profile Messaging Flow', () => {
     expect(JSON.parse(localStorage.getItem('securechat_all_users_db') || '[]')).toHaveLength(2);
   });
 
-  it('getOfflineUsersDB returns default saved localhost users on fresh mobile instance', async () => {
+  it('getOfflineUsersDB returns empty array with no default dummy users on fresh mobile instance', async () => {
     const { getOfflineUsersDB } = await import('../utils/api');
     const users = getOfflineUsersDB();
-    expect(users.length).toBeGreaterThan(0);
-    const sonu = users.find(u => u.username === '@mcsonu143' || u.email === 'mcsonu143@gmail.com');
-    expect(sonu).toBeDefined();
-    expect(sonu.name).toBe('sonu panigrahi');
+    expect(users).toHaveLength(0);
   });
 
-  it('Sidebar searches and finds saved localhost user sonu panigrahi on mobile', async () => {
-    const { getOfflineUsersDB } = await import('../utils/api');
+  it('Sidebar searches and finds realtime saved user sonu panigrahi on mobile', async () => {
+    const { saveOfflineUsersDB, getOfflineUsersDB } = await import('../utils/api');
+    const realtimeUser = {
+      id: 'user_realtime_sonu',
+      name: 'sonu panigrahi',
+      username: '@mcsonu143',
+      email: 'mcsonu143@gmail.com',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb',
+      isOnline: true
+    };
+    saveOfflineUsersDB([realtimeUser]);
     const offlineUsers = getOfflineUsersDB();
     const onSelectChatTarget = vi.fn();
 

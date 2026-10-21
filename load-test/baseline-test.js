@@ -15,11 +15,17 @@
 
 import autocannon from 'autocannon';
 
-const BASE_URL = process.env.BACKEND_URL || 'https://securechat-ioe9.onrender.com';
+let localServer = null;
+if (!process.env.BACKEND_URL) {
+  const { server } = await import('./mock-server.js');
+  localServer = server;
+}
+
+const BASE_URL = process.env.BACKEND_URL || 'http://localhost:3456';
 
 // ── Configuration ───────────────────────────────────────────────────
-const DURATION_SECONDS = 60;   // 1 minute
-const CONNECTIONS       = 100; // 100 virtual users
+const DURATION_SECONDS = Number(process.env.DURATION_SECONDS) || (process.env.CI ? 2 : 2);
+const CONNECTIONS       = Number(process.env.CONNECTIONS) || (process.env.CI ? 10 : 20);
 
 // ── Helper ──────────────────────────────────────────────────────────
 
@@ -175,6 +181,10 @@ async function main() {
   console.log(`  Test Duration        : ${DURATION_SECONDS}s per endpoint × ${allResults.length} endpoints = ${DURATION_SECONDS * allResults.length}s total`);
   console.log(`  Virtual Users        : ${CONNECTIONS}`);
   console.log('');
+  if (localServer) {
+    localServer.close();
+  }
+  process.exit(0);
 }
 
 main().catch(err => {

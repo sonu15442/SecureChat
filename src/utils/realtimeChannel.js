@@ -59,6 +59,9 @@ export function initChannel(user) {
       case 'typing':
         emit('typing', payload);
         break;
+      case 'call_signal':
+        emit('call_signal', payload);
+        break;
     }
   };
 
@@ -104,6 +107,14 @@ export function broadcastTyping(userId, userName) {
 export function broadcastUserUpdated(user) {
   currentUserData = user;
   broadcastRaw('user_updated', { user });
+}
+
+export function broadcastCallSignal(signalData) {
+  broadcastRaw('call_signal', signalData);
+}
+
+export function emitCallSignal(signalData) {
+  emit('call_signal', signalData);
 }
 
 export function on(eventType, callback) {

@@ -6,6 +6,16 @@ import { DEFAULT_SAVED_USERS } from './initialData';
  */
 function getApiCandidates() {
   const candidates = [];
+
+  // Check if a custom server IP was configured in Settings (e.g. for phone on WiFi)
+  try {
+    const customServer = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_custom_server') : null;
+    if (customServer && customServer.trim()) {
+      const cleanCustom = customServer.trim().replace(/\/+$/, '');
+      candidates.push(cleanCustom.endsWith('/api') ? cleanCustom : `${cleanCustom}/api`);
+    }
+  } catch {}
+
   if (typeof window !== 'undefined') {
     const origin = window.location.origin || '';
     const hostname = window.location.hostname || '';
@@ -21,7 +31,11 @@ function getApiCandidates() {
     }
     candidates.push('http://localhost:3001/api');
     candidates.push('http://127.0.0.1:3001/api');
-    candidates.push('http://10.15.104.35:3001/api');
+    // Laptop host IPv4 on local Wi-Fi for direct Mobile connectivity
+    candidates.push('http://10.223.64.151:3001/api');
+    candidates.push('http://10.216.93.35:3001/api');
+    // Standard Android emulator loopback to host PC
+    candidates.push('http://10.0.2.2:3001/api');
   }
 
   if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL) {
@@ -77,44 +91,141 @@ async function safeParseResponse(res) {
   }
 }
 
-// Offline LocalStorage DB Helpers
+// Offline LocalStorage DB Helpers (Strictly No Default/Mock Users)
 export function getOfflineUsersDB() {
   try {
     const saved = localStorage.getItem('securechat_all_users_db');
     if (!saved) {
-      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
-      return DEFAULT_SAVED_USERS;
+      localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
-      return DEFAULT_SAVED_USERS;
+      localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
+      return [];
     }
-    // Filter out any fake demo mock users (Alice, Bob, etc.)
+    // Filter out any legacy dummy mock accounts (Alice, Bob, Charlie, Rohan, Arjun, etc.)
     const filtered = parsed.filter(u =>
       u &&
       u.id &&
       !u.id.includes('demo') &&
       u.email !== 'alice@example.com' &&
-      u.email !== 'bob@example.com'
+      u.email !== 'bob@example.com' &&
+      u.id !== 'user_1788422525931_wlrz' &&
+      u.id !== 'user_arjun_s_' &&
+      u.id !== 'user_arjun'
     );
-    const userMap = new Map();
-    DEFAULT_SAVED_USERS.forEach(u => { if (u?.id) userMap.set(u.id, u); });
-    filtered.forEach(u => { if (u?.id) userMap.set(u.id, { ...userMap.get(u.id), ...u }); });
-    const result = Array.from(userMap.values());
-    localStorage.setItem('securechat_all_users_db', JSON.stringify(result));
-    return result;
+    localStorage.setItem('securechat_all_users_db', JSON.stringify(filtered));
+    return filtered;
   } catch {
-    return DEFAULT_SAVED_USERS;
+    return [];
   }
 }
 
 export function saveOfflineUsersDB(users) {
   try {
-    localStorage.setItem('securechat_all_users_db', JSON.stringify(users));
+    const cleanUsers = Array.isArray(users)
+      ? users.filter(u =>
+          u &&
+          u.id &&
+          !u.id.includes('demo') &&
+          u.email !== 'alice@example.com' &&
+          u.email !== 'bob@example.com' &&
+          u.id !== 'user_1788422525931_wlrz' &&
+          u.id !== 'user_arjun_s_' &&
+          u.id !== 'user_arjun'
+        )
+      : [];
+    localStorage.setItem('securechat_all_users_db', JSON.stringify(cleanUsers));
   } catch (e) {
     console.error('Error saving offline users DB:', e);
   }
+}
+
+/**
+ * Synchronize any locally saved/offline users on mobile to the central laptop database
+ */
+export async function syncAllOfflineUsersWithBackend() {
+  const localUsers = getOfflineUsersDB();
+  if (!localUsers || localUsers.length === 0) return;
+  for (const u of localUsers) {
+    if (u && u.id && u.name) {
+      await syncUserWithBackend(u);
+    }
+  }
+}
+
+/**
+ * Check backend database and server health with live latency
+ */
+export async function checkServerHealth() {
+  try {
+    const start = Date.now();
+    const { res, data } = await fetchWithFallback('/health/db');
+    const latency = Date.now() - start;
+    return { ok: res.ok, latency, data };
+  } catch (err) {
+    return { ok: false, error: err.message, latency: null };
+  }
+}
+
+/**
+ * Real-time SSE stream for instant cross-device updates between Laptop and Mobile
+ */
+let sseSource = null;
+export function initRealtimeEventStream(onEvent) {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') return () => {};
+
+  if (sseSource) {
+    try { sseSource.close(); } catch {}
+  }
+
+  const candidates = getApiCandidates();
+  let candidateIndex = 0;
+
+  const connect = () => {
+    if (candidateIndex >= candidates.length) return;
+    const base = candidates[candidateIndex];
+    const streamUrl = `${base}/realtime/stream`;
+
+    try {
+      const es = new EventSource(streamUrl);
+      sseSource = es;
+
+      es.onmessage = (e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          if (onEvent) onEvent(parsed);
+        } catch {}
+      };
+
+      es.onerror = () => {
+        es.close();
+        candidateIndex++;
+        if (candidateIndex < candidates.length) {
+          connect();
+        } else {
+          // Reset and retry first candidate after 5s
+          setTimeout(() => {
+            candidateIndex = 0;
+            connect();
+          }, 5000);
+        }
+      };
+    } catch {
+      candidateIndex++;
+      connect();
+    }
+  };
+
+  connect();
+
+  return () => {
+    if (sseSource) {
+      try { sseSource.close(); } catch {}
+      sseSource = null;
+    }
+  };
 }
 
 function hashPasswordClient(password) {
@@ -170,8 +281,9 @@ export async function registerUser(email, fullName) {
     // ── Offline Fallback ──
     const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
 
-    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
-      throw new Error('Invalid email address format.');
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      throw new Error('Please enter a valid email address with a domain (e.g. name@example.com).');
     }
 
     if (!fullName || !fullName.trim()) {
@@ -360,13 +472,22 @@ export async function sendPresenceLeave(userId) {
  * Fetch all registered users
  */
 export async function fetchAllUsers() {
-  // Attempt to sync current user from local storage to backend database
+  // Attempt to sync all offline registered users from local storage to backend database
   try {
     const saved = localStorage.getItem('securechat_user');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && parsed.id) {
         syncUserWithBackend(parsed);
+      }
+    }
+    // Also push any pending offline saved users to ensure mobile -> laptop persistence
+    const localUsers = getOfflineUsersDB();
+    if (localUsers.length > 0) {
+      for (const u of localUsers) {
+        if (u && u.id && u.name) {
+          syncUserWithBackend(u);
+        }
       }
     }
   } catch {
@@ -488,5 +609,20 @@ export async function searchUsers(query) {
       phone.includes(qLower)
     );
   });
+}
+
+/**
+ * Send WebRTC call signal across network via backend
+ */
+export async function sendCallSignal(signalData) {
+  try {
+    await fetchWithFallback('/call/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signalData)
+    });
+  } catch (err) {
+    // If backend is offline, BroadcastChannel will still handle local multi-tab calls
+  }
 }
 

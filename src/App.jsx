@@ -4,14 +4,35 @@ import ChatPanel from './components/ChatPanel';
 import LinkRiskModal from './components/LinkRiskModal';
 import VoiceCallModal from './components/VoiceCallModal';
 import VideoCallModal from './components/VideoCallModal';
+import IncomingCallModal from './components/IncomingCallModal';
+import CallUserPickerModal from './components/CallUserPickerModal';
 import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
 import StatusModal from './components/StatusModal';
 import StatusViewerModal from './components/StatusViewerModal';
-import LiveTestReporter from './components/LiveTestReporter';
 import { DEFAULT_SETTINGS } from './utils/initialData';
-import { initChannel, destroyChannel, broadcastMessage, broadcastReadReceipt, broadcastUserUpdated, on } from './utils/realtimeChannel';
-import { fetchAllUsers, fetchStoredMessages, saveStoredMessage, clearAllDatabaseData, syncUserWithBackend, sendPresenceHeartbeat, sendPresenceLeave, getOfflineUsersDB } from './utils/api';
+import {
+  initChannel,
+  destroyChannel,
+  broadcastMessage,
+  broadcastReadReceipt,
+  broadcastUserUpdated,
+  broadcastCallSignal,
+  on
+} from './utils/realtimeChannel';
+import {
+  fetchAllUsers,
+  fetchStoredMessages,
+  saveStoredMessage,
+  clearAllDatabaseData,
+  syncUserWithBackend,
+  sendPresenceHeartbeat,
+  sendPresenceLeave,
+  getOfflineUsersDB,
+  initRealtimeEventStream,
+  checkServerHealth,
+  sendCallSignal
+} from './utils/api';
 import { getActiveStatuses } from './utils/statusManager';
 import { recordAction } from './utils/testRecorder';
 
@@ -22,6 +43,10 @@ function App() {
       const saved = localStorage.getItem('securechat_user');
       const parsed = saved ? JSON.parse(saved) : null;
       if (parsed && typeof parsed === 'object' && parsed.id && parsed.name) {
+        if (parsed.email === 'mcsonu143@gmail.com' || parsed.email === 'admin@test.com' || (parsed.id && parsed.id.includes('demo'))) {
+          localStorage.removeItem('securechat_user');
+          return null;
+        }
         return parsed;
       }
       return null;
@@ -43,9 +68,36 @@ function App() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
 
+  // ── Theme State (Accessible Light Colors by default for all age groups) ──
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('securechat_theme') || 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.className = theme;
+    document.body.className = theme;
+    try {
+      localStorage.setItem('securechat_theme', theme);
+    } catch {}
+  }, [theme]);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      recordAction('Profile Management', `User toggles ${next} mode theme appearance`);
+      return next;
+    });
+  }, []);
+
   // ── Active Chat Target ('global' or User object) ──
   const [activeChatTarget, setActiveChatTarget] = useState('global');
   const [unreadCounts, setUnreadCounts] = useState({});
+  const [syncStatus, setSyncStatus] = useState({ online: true, latency: 15 });
 
   // ── Mobile Responsive Sidebar State ──
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -53,13 +105,36 @@ function App() {
   // ── PWA Install Prompt State ──
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
-  // ── Modals ──
+  // ── Modals & Calls ──
   const [linkModalData, setLinkModalData] = useState(null);
-  const [voiceCallActive, setVoiceCallActive] = useState(false);
-  const [videoCallActive, setVideoCallActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  // ── Peer-to-Peer Voice & Video Call State (WhatsApp Style) ──
+  const [activeCall, setActiveCall] = useState(null); // { callId, type: 'voice'|'video', isCaller, caller, recipient, status }
+  const [incomingCall, setIncomingCall] = useState(null); // { callId, type, caller, recipientId }
+  const [latestIncomingSignal, setLatestIncomingSignal] = useState(null);
+  const [callPickerType, setCallPickerType] = useState(null);
+
+  // ── Auto-Purge Previously Saved Profiles on Startup ──
+  useEffect(() => {
+    const PURGE_KEY = 'securechat_profiles_purged_v3';
+    if (!localStorage.getItem(PURGE_KEY)) {
+      localStorage.removeItem('securechat_user');
+      localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
+      localStorage.setItem('securechat_all_messages', JSON.stringify([]));
+      localStorage.setItem(PURGE_KEY, 'true');
+
+      // Purge backend database
+      fetch('/api/users/clear-all', { method: 'POST' }).catch(() => {});
+
+      setCurrentUser(null);
+      setRegisteredUsers([]);
+      setMessages([]);
+    }
+  }, []);
+
   const activeChatTargetRef = useRef(activeChatTarget);
+  const handleIncomingCallSignalRef = useRef(null);
   useEffect(() => {
     activeChatTargetRef.current = activeChatTarget;
   }, [activeChatTarget]);
@@ -167,7 +242,14 @@ function App() {
       });
     });
 
-    cleanupRef.current = [unsub1, unsub2, unsub3, unsub4, unsub5];
+    // Listen for call signals (invites, answers, ice candidates)
+    const unsub6 = on('call_signal', (signal) => {
+      if (handleIncomingCallSignalRef.current) {
+        handleIncomingCallSignalRef.current(signal);
+      }
+    });
+
+    cleanupRef.current = [unsub1, unsub2, unsub3, unsub4, unsub5, unsub6];
 
     return () => {
       cleanupRef.current.forEach(fn => fn());
@@ -189,6 +271,71 @@ function App() {
     return () => {
       clearInterval(heartbeatInterval);
       sendPresenceLeave(currentUser.id);
+    };
+  }, [currentUser]);
+
+  // Periodic health & latency check for live sync badge
+  useEffect(() => {
+    const check = async () => {
+      const res = await checkServerHealth();
+      setSyncStatus({ online: res.ok, latency: res.latency || 20 });
+    };
+    check();
+    const timer = setInterval(check, 8000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // ── Instant Cross-Device Real-Time SSE Stream (Sub-100ms sync between Laptop & Mobile) ──
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const cleanupSSE = initRealtimeEventStream((event) => {
+      if (!event || !event.type) return;
+
+      if (event.type === 'message' && event.payload) {
+        const msg = event.payload;
+        setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+
+        if (msg.senderId !== currentUser.id) {
+          const currentTarget = activeChatTargetRef.current;
+          const isViewing = currentTarget && (
+            (currentTarget === 'global' && (!msg.recipientId || msg.recipientId === 'global')) ||
+            (currentTarget.id === msg.senderId && msg.recipientId === currentUser.id)
+          );
+          if (!isViewing && msg.recipientId && msg.recipientId === currentUser.id) {
+            setUnreadCounts(prev => ({
+              ...prev,
+              [msg.senderId]: (prev[msg.senderId] || 0) + 1
+            }));
+          }
+        }
+      } else if (event.type === 'user_registered' || event.type === 'user_updated') {
+        const u = event.payload?.user;
+        if (u && u.id) {
+          setRegisteredUsers(prev => {
+            const idx = prev.findIndex(item => item.id === u.id);
+            if (idx !== -1) {
+              const copy = [...prev];
+              copy[idx] = { ...copy[idx], ...u };
+              return copy;
+            }
+            return [...prev, u];
+          });
+        }
+      } else if (event.type === 'users_updated' && Array.isArray(event.payload?.users)) {
+        setRegisteredUsers(event.payload.users);
+      } else if (event.type === 'call_signal' && event.payload) {
+        if (handleIncomingCallSignalRef.current) {
+          handleIncomingCallSignalRef.current(event.payload);
+        }
+      }
+    });
+
+    return () => {
+      cleanupSSE();
     };
   }, [currentUser]);
 
@@ -389,21 +536,167 @@ function App() {
     setLinkModalData(linkData);
   }, []);
 
-  const handleOpenVoiceCall = useCallback(() => {
-    setVoiceCallActive(true);
+  // ── Call Signaling & Handlers ──
+  const handleSendCallSignal = useCallback((signalPayload) => {
+    broadcastCallSignal(signalPayload);
+    sendCallSignal(signalPayload);
   }, []);
 
-  const handleOpenVideoCall = useCallback(() => {
-    setVideoCallActive(true);
-  }, []);
+  const handleIncomingCallSignal = useCallback((signal) => {
+    if (!signal || !currentUser) return;
 
-  // Gate app behind Login Modal
+    if (signal.type === 'call_invite') {
+      if (signal.recipientId === currentUser.id) {
+        setIncomingCall(signal);
+      }
+    } else if (signal.type === 'call_cancel') {
+      if (signal.recipientId === currentUser.id) {
+        setIncomingCall(null);
+      }
+    } else if (signal.type === 'call_reject') {
+      if (signal.recipientId === currentUser.id) {
+        setActiveCall(null);
+        setIncomingCall(null);
+      }
+    } else if (signal.type === 'call_accepted') {
+      if (signal.recipientId === currentUser.id) {
+        setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
+        setLatestIncomingSignal(signal);
+      }
+    } else if (signal.type === 'call_end') {
+      if (signal.recipientId === currentUser.id || signal.targetId === currentUser.id) {
+        setActiveCall(null);
+        setIncomingCall(null);
+        setLatestIncomingSignal(null);
+      }
+    } else if (signal.type === 'offer' || signal.type === 'answer' || signal.type === 'ice_candidate') {
+      if (signal.targetId === currentUser.id) {
+        setLatestIncomingSignal(signal);
+      }
+    }
+  }, [currentUser]);
+
+  // Keep callback ref updated
+  useEffect(() => {
+    handleIncomingCallSignalRef.current = handleIncomingCallSignal;
+  }, [handleIncomingCallSignal]);
+
+  const initiateCall = useCallback((type, targetUser) => {
+    if (!currentUser) return;
+    let target = targetUser;
+    if (!target || !target.id) {
+      if (activeChatTarget && activeChatTarget !== 'global') {
+        target = activeChatTarget;
+      } else {
+        setCallPickerType(type);
+        return;
+      }
+    }
+
+    const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const callObj = {
+      callId,
+      type,
+      isCaller: true,
+      caller: currentUser,
+      recipient: target,
+      status: 'ringing'
+    };
+
+    setActiveCall(callObj);
+
+    const invitePayload = {
+      type: 'call_invite',
+      callId,
+      callType: type,
+      caller: currentUser,
+      recipientId: target.id
+    };
+
+    broadcastCallSignal(invitePayload);
+    sendCallSignal(invitePayload);
+  }, [currentUser, activeChatTarget]);
+
+  const handleOpenVoiceCall = useCallback((target) => {
+    initiateCall('voice', target);
+  }, [initiateCall]);
+
+  const handleOpenVideoCall = useCallback((target) => {
+    initiateCall('video', target);
+  }, [initiateCall]);
+
+  const handleAcceptIncomingCall = useCallback(() => {
+    if (!incomingCall || !currentUser) return;
+
+    const callObj = {
+      callId: incomingCall.callId,
+      type: incomingCall.callType || 'voice',
+      isCaller: false,
+      caller: incomingCall.caller,
+      recipient: currentUser,
+      status: 'connected'
+    };
+
+    const acceptPayload = {
+      type: 'call_accepted',
+      callId: incomingCall.callId,
+      recipientId: incomingCall.caller.id,
+      callee: currentUser
+    };
+
+    broadcastCallSignal(acceptPayload);
+    sendCallSignal(acceptPayload);
+
+    setActiveCall(callObj);
+    setIncomingCall(null);
+  }, [incomingCall, currentUser]);
+
+  const handleDeclineIncomingCall = useCallback(() => {
+    if (!incomingCall) return;
+
+    const rejectPayload = {
+      type: 'call_reject',
+      callId: incomingCall.callId,
+      recipientId: incomingCall.caller.id
+    };
+
+    broadcastCallSignal(rejectPayload);
+    sendCallSignal(rejectPayload);
+
+    setIncomingCall(null);
+  }, [incomingCall]);
+
+  const handleEndActiveCall = useCallback((currentCall) => {
+    if (!currentCall || !currentUser) return;
+    const targetId = currentCall.isCaller ? currentCall.recipient?.id : currentCall.caller?.id;
+
+    if (currentCall.isCaller && currentCall.status === 'ringing') {
+      const cancelPayload = {
+        type: 'call_cancel',
+        callId: currentCall.callId,
+        recipientId: targetId
+      };
+      broadcastCallSignal(cancelPayload);
+      sendCallSignal(cancelPayload);
+    } else {
+      const endPayload = {
+        type: 'call_end',
+        callId: currentCall.callId,
+        recipientId: targetId,
+        targetId
+      };
+      broadcastCallSignal(endPayload);
+      sendCallSignal(endPayload);
+    }
+
+    setActiveCall(null);
+    setLatestIncomingSignal(null);
+  }, [currentUser]);
+
+  // Gate app behind Login Modal (No Excel or selenium buttons)
   if (!currentUser) {
     return (
-      <>
-        <AuthModal onLogin={handleLogin} />
-        <LiveTestReporter />
-      </>
+      <AuthModal onLogin={handleLogin} theme={theme} onToggleTheme={handleToggleTheme} />
     );
   }
 
@@ -438,6 +731,12 @@ function App() {
           statuses={statuses}
           onOpenStatusModal={() => { setShowStatusModal(true); setShowMobileSidebar(false); }}
           onOpenStatusViewer={(group) => { setActiveStatusViewerGroup(group); setShowMobileSidebar(false); }}
+          syncStatus={syncStatus}
+          onOpenLinkModal={handleOpenLinkModal}
+          onOpenVoiceCall={handleOpenVoiceCall}
+          onOpenVideoCall={handleOpenVideoCall}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
         />
       </div>
 
@@ -454,6 +753,8 @@ function App() {
         currentUser={currentUser}
         onlineUsers={onlineUsers}
         onToggleMobileSidebar={() => setShowMobileSidebar(prev => !prev)}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* ── Modals ── */}
@@ -487,15 +788,47 @@ function App() {
         />
       )}
 
-      {voiceCallActive && (
-        <VoiceCallModal
-          onClose={() => setVoiceCallActive(false)}
+      {/* ── Incoming Call Modal (with WhatsApp-Style Continuous Ringing) ── */}
+      {incomingCall && (
+        <IncomingCallModal
+          call={incomingCall}
+          onAccept={handleAcceptIncomingCall}
+          onDecline={handleDeclineIncomingCall}
         />
       )}
 
-      {videoCallActive && (
+      {/* ── Active Voice Call Modal (WebRTC Peer Audio Connection) ── */}
+      {activeCall && activeCall.type === 'voice' && (
+        <VoiceCallModal
+          call={activeCall}
+          incomingSignal={latestIncomingSignal}
+          onSendSignal={handleSendCallSignal}
+          onEndCall={handleEndActiveCall}
+          onClose={() => handleEndActiveCall(activeCall)}
+        />
+      )}
+
+      {/* ── Active Video Call Modal (WebRTC Peer Video & Voice Connection) ── */}
+      {activeCall && activeCall.type === 'video' && (
         <VideoCallModal
-          onClose={() => setVideoCallActive(false)}
+          call={activeCall}
+          incomingSignal={latestIncomingSignal}
+          onSendSignal={handleSendCallSignal}
+          onEndCall={handleEndActiveCall}
+          onClose={() => handleEndActiveCall(activeCall)}
+        />
+      )}
+
+      {/* ── Contact Call Picker Modal (if initiated from Global Chat) ── */}
+      {callPickerType && (
+        <CallUserPickerModal
+          callType={callPickerType}
+          availableUsers={allAvailableUsers}
+          onSelectUser={(user) => {
+            setCallPickerType(null);
+            initiateCall(callPickerType, user);
+          }}
+          onClose={() => setCallPickerType(null)}
         />
       )}
 
@@ -511,9 +844,6 @@ function App() {
           onInstallApp={handleInstallApp}
         />
       )}
-
-      {/* Live Selenium Test Suite Reporter */}
-      <LiveTestReporter />
     </div>
   );
 }

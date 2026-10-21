@@ -1,4 +1,4 @@
-name: "fix: Move GitHub Actions workflow to repo root so it triggers on push..."
+name: "Automated End-to-End Test Suite (300)"
 
 on:
   push:

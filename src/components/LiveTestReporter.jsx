@@ -21,10 +21,12 @@ export default function LiveTestReporter() {
     return unsub;
   }, []);
 
-  const handleDownload = () => {
-    const filename = exportTestsToExcel(tests);
-    setDownloadSuccess(filename);
-    setTimeout(() => setDownloadSuccess(''), 5000);
+  const handleDownload = async () => {
+    const filename = await exportTestsToExcel(tests);
+    if (filename) {
+      setDownloadSuccess(filename);
+      setTimeout(() => setDownloadSuccess(''), 5000);
+    }
   };
 
   const handleReset = () => {

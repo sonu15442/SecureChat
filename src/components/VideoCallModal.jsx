@@ -1,91 +1,260 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, ShieldCheck, Monitor, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, ShieldCheck, Monitor, AlertCircle, PhoneForwarded } from 'lucide-react';
+import {
+  startOutgoingRingtone,
+  stopOutgoingRingtone,
+  playConnectedChime,
+  playEndedChime
+} from '../utils/callAudio';
 
-export default function VideoCallModal({ onClose }) {
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+  ]
+};
+
+export default function VideoCallModal({
+  call,
+  onClose,
+  onSendSignal,
+  onEndCall,
+  incomingSignal
+}) {
+  const isCaller = !!call?.isCaller;
+  const targetUser = isCaller ? (call?.recipient || {}) : (call?.caller || {});
+  const [callStatus, setCallStatus] = useState(call?.status || (isCaller ? 'ringing' : 'connected'));
+
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [duration, setDuration] = useState(0);
   const [mediaError, setMediaError] = useState(null);
-  const [mediaReady, setMediaReady] = useState(false);
 
-  const mainVideoRef = useRef(null);
-  const pipVideoRef = useRef(null);
-  const screenVideoRef = useRef(null);
-  const streamRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
+  const pcRef = useRef(null);
+  const candidateQueue = useRef([]);
 
-  // Timer
+  // 1. Ringing sound if outgoing
   useEffect(() => {
+    if (callStatus === 'ringing' && isCaller) {
+      startOutgoingRingtone();
+    } else {
+      stopOutgoingRingtone();
+    }
+    return () => {
+      stopOutgoingRingtone();
+    };
+  }, [callStatus, isCaller]);
+
+  useEffect(() => {
+    if (call?.status && call.status !== callStatus) {
+      if (call.status === 'connected' && callStatus === 'ringing') {
+        playConnectedChime();
+      }
+      setCallStatus(call.status);
+    }
+  }, [call?.status, callStatus]);
+
+  // 2. Timer
+  useEffect(() => {
+    if (callStatus !== 'connected') return;
     const timer = setInterval(() => setDuration(prev => prev + 1), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [callStatus]);
 
-  // Real camera + mic access
+  // 3. WebRTC Media & Peer Connection
   useEffect(() => {
     let cancelled = false;
 
-    async function startMedia() {
+    async function initWebRTC() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-
-        streamRef.current = stream;
-        setMediaReady(true);
-
-        // Attach to both video elements
-        if (mainVideoRef.current) {
-          mainVideoRef.current.srcObject = stream;
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
         }
-        if (pipVideoRef.current) {
-          pipVideoRef.current.srcObject = stream;
+
+        localStreamRef.current = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+
+        const pc = new RTCPeerConnection(RTC_CONFIG);
+        pcRef.current = pc;
+
+        // Add both audio and video tracks
+        stream.getTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
+
+        // Remote track arrival (audio + video from peer)
+        pc.ontrack = (event) => {
+          if (event.streams && event.streams[0]) {
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = event.streams[0];
+              remoteVideoRef.current.play().catch(() => {});
+            }
+          }
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate && onSendSignal) {
+            onSendSignal({
+              type: 'ice_candidate',
+              candidate: event.candidate,
+              callId: call.callId,
+              targetId: targetUser.id
+            });
+          }
+        };
+
+        if (isCaller) {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          if (onSendSignal) {
+            onSendSignal({
+              type: 'offer',
+              sdp: offer,
+              callId: call.callId,
+              targetId: targetUser.id
+            });
+          }
+        } else {
+          processQueuedSignals();
         }
       } catch (err) {
         if (!cancelled) {
           setMediaError(
             err.name === 'NotAllowedError'
-              ? 'Camera/mic access denied. Please allow permissions.'
-              : 'Could not access camera: ' + err.message
+              ? 'Camera/microphone access denied. Please allow permissions in browser.'
+              : 'Could not access camera/mic: ' + err.message
           );
         }
       }
     }
 
-    startMedia();
+    initWebRTC();
 
     return () => {
       cancelled = true;
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      stopOutgoingRingtone();
+      if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
       if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(t => t.stop());
+      if (pcRef.current) pcRef.current.close();
     };
   }, []);
 
-  // Toggle mute
+  const processQueuedSignals = async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    while (candidateQueue.current.length > 0) {
+      const cand = candidateQueue.current.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch {}
+    }
+  };
+
+  // 4. Handle incoming WebRTC signals
   useEffect(() => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
+    if (!incomingSignal || incomingSignal.callId !== call.callId) return;
+    const pc = pcRef.current;
+
+    async function handleSignal() {
+      try {
+        if (incomingSignal.type === 'call_accepted') {
+          setCallStatus('connected');
+          stopOutgoingRingtone();
+          playConnectedChime();
+          if (isCaller && pc && !pc.currentRemoteDescription) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            if (onSendSignal) {
+              onSendSignal({
+                type: 'offer',
+                sdp: offer,
+                callId: call.callId,
+                targetId: targetUser.id
+              });
+            }
+          }
+        } else if (incomingSignal.type === 'offer' && !isCaller) {
+          if (!pc) return;
+          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
+          setCallStatus('connected');
+          stopOutgoingRingtone();
+          playConnectedChime();
+          processQueuedSignals();
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          if (onSendSignal) {
+            onSendSignal({
+              type: 'answer',
+              sdp: answer,
+              callId: call.callId,
+              targetId: targetUser.id
+            });
+          }
+        } else if (incomingSignal.type === 'answer' && isCaller) {
+          if (!pc) return;
+          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
+          setCallStatus('connected');
+          stopOutgoingRingtone();
+          playConnectedChime();
+          processQueuedSignals();
+        } else if (incomingSignal.type === 'ice_candidate') {
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(incomingSignal.candidate));
+          } else {
+            candidateQueue.current.push(incomingSignal.candidate);
+          }
+        }
+      } catch (err) {
+        console.warn('Video call WebRTC signal error:', err);
+      }
+    }
+
+    handleSignal();
+  }, [incomingSignal, isCaller, call.callId]);
+
+  // Toggle Mute
+  useEffect(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
     }
   }, [isMuted]);
 
-  // Toggle video
+  // Toggle Video
   useEffect(() => {
-    if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(t => { t.enabled = isVideoOn; });
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = isVideoOn; });
     }
   }, [isVideoOn]);
 
-  // Screen sharing
+  // Screen Sharing
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      // Stop screen share
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach(t => t.stop());
         screenStreamRef.current = null;
       }
       setIsScreenSharing(false);
-      // Restore camera to main view
-      if (mainVideoRef.current && streamRef.current) {
-        mainVideoRef.current.srcObject = streamRef.current;
+      // Restore camera track to peer connection
+      if (localStreamRef.current && pcRef.current) {
+        const camVideoTrack = localStreamRef.current.getVideoTracks()[0];
+        const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender && camVideoTrack) {
+          sender.replaceTrack(camVideoTrack);
+        }
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStreamRef.current;
+        }
       }
     } else {
       try {
@@ -93,21 +262,29 @@ export default function VideoCallModal({ onClose }) {
         screenStreamRef.current = screenStream;
         setIsScreenSharing(true);
 
-        // Show screen share in main view
-        if (mainVideoRef.current) {
-          mainVideoRef.current.srcObject = screenStream;
+        const screenTrack = screenStream.getVideoTracks()[0];
+        if (pcRef.current) {
+          const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender && screenTrack) {
+            sender.replaceTrack(screenTrack);
+          }
+        }
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = screenStream;
         }
 
-        // When user stops sharing via browser UI
-        screenStream.getVideoTracks()[0].onended = () => {
+        screenTrack.onended = () => {
           setIsScreenSharing(false);
-          if (mainVideoRef.current && streamRef.current) {
-            mainVideoRef.current.srcObject = streamRef.current;
+          if (localStreamRef.current && pcRef.current) {
+            const camTrack = localStreamRef.current.getVideoTracks()[0];
+            const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender && camTrack) sender.replaceTrack(camTrack);
+            if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
           }
           screenStreamRef.current = null;
         };
       } catch (err) {
-        // User cancelled screen share picker — do nothing
+        // Cancelled picker
       }
     }
   };
@@ -118,148 +295,169 @@ export default function VideoCallModal({ onClose }) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleEndCall = () => {
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(t => t.stop());
+  const handleEndCallAction = () => {
+    stopOutgoingRingtone();
+    playEndedChime();
+    if (onEndCall) onEndCall(call);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-fade-in">
-      <div className="w-full max-w-3xl glass-modal rounded-3xl overflow-hidden border border-emerald-500/20 shadow-2xl flex flex-col h-[600px] relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
+      <div className="w-full max-w-4xl rounded-3xl overflow-hidden border border-emerald-500/30 bg-[#060b0e] shadow-2xl flex flex-col h-[650px] relative">
         
         {/* Call Header Overlay */}
-        <div className="absolute top-0 left-0 right-0 p-4 z-20 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent">
+        <div className="absolute top-0 left-0 right-0 p-5 z-20 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center border-2 border-emerald-500/40">
               <Video className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                {isScreenSharing ? 'Screen Sharing' : 'Video Call'}
+              <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <span>{targetUser?.name || 'Contact'}</span>
+                {isScreenSharing && <span className="text-xs text-purple-400 font-semibold">• Screen Sharing</span>}
               </h3>
-              <p className="text-xs text-emerald-400 font-mono">{formatTimer(duration)} • HD</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold">
-            <ShieldCheck className="w-4 h-4" />
-            E2E Encrypted
-          </div>
-        </div>
-
-        {/* Video Screen Viewport */}
-        <div className="flex-1 relative bg-slate-900 flex items-center justify-center overflow-hidden">
-          
-          {/* Main Video Stream */}
-          {mediaReady && isVideoOn ? (
-            <video
-              ref={mainVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
-          ) : mediaError ? (
-            <div className="flex flex-col items-center justify-center space-y-4 p-8">
-              <div className="w-20 h-20 rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center">
-                <AlertCircle className="w-10 h-10 text-red-400" />
-              </div>
-              <p className="text-sm text-red-400 text-center max-w-xs">{mediaError}</p>
-            </div>
-          ) : !isVideoOn ? (
-            <div className="flex flex-col items-center justify-center space-y-4">
-              <div className="w-24 h-24 rounded-full bg-slate-800 border-4 border-gray-700 flex items-center justify-center text-gray-500">
-                <VideoOff className="w-10 h-10" />
-              </div>
-              <p className="text-sm text-gray-400">Camera turned off</p>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center space-y-3">
-              <div className="w-12 h-12 rounded-full border-4 border-emerald-500/30 border-t-emerald-400 animate-spin" />
-              <p className="text-xs text-gray-400">Starting camera...</p>
-            </div>
-          )}
-
-          {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-black/30 pointer-events-none" />
-
-          {/* Local Camera PiP Preview */}
-          {mediaReady && !isScreenSharing && (
-            <div className="absolute bottom-20 right-6 w-40 h-28 rounded-2xl bg-gray-900 border-2 border-emerald-500/40 overflow-hidden shadow-2xl z-20 transition-all hover:scale-105">
-              <video
-                ref={pipVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute top-2 left-2 text-[10px] bg-black/60 px-1.5 py-0.5 rounded text-gray-300">You</div>
-            </div>
-          )}
-
-          {/* Mic status indicator */}
-          {mediaReady && (
-            <div className="absolute bottom-24 left-6 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-gray-800 z-20">
-              {isMuted ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-red-400" />
-                  <span className="text-xs text-red-300 font-medium">Mic muted</span>
-                </>
+              {callStatus === 'ringing' ? (
+                <p className="text-xs text-amber-400 font-bold animate-pulse flex items-center gap-1">
+                  <PhoneForwarded className="w-3.5 h-3.5" />
+                  <span>Ringing... waiting for user to pick up</span>
+                </p>
               ) : (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-xs text-gray-300 font-medium">Mic active</span>
-                </>
+                <p className="text-xs text-emerald-400 font-mono font-bold">
+                  Connected • {formatTimer(duration)} • HD
+                </p>
               )}
             </div>
-          )}
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold backdrop-blur-md">
+            <ShieldCheck className="w-4 h-4" />
+            <span>WhatsApp HD Encrypted</span>
+          </div>
         </div>
 
-        {/* Video Control Bar */}
-        <div className="p-4 bg-slate-950/90 border-t border-gray-800/80 flex items-center justify-center gap-6 z-30">
-          <button 
+        {/* Video Area */}
+        <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden">
+          {/* Main Remote Video Element — Plays Remote Video & Voice */}
+          {callStatus === 'connected' ? (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            /* Ringing Screen before callee picks up */
+            <div className="flex flex-col items-center justify-center space-y-4 my-auto relative z-10 animate-fade-in">
+              <div className="relative">
+                <div className="absolute -inset-6 rounded-full border-2 border-emerald-400/30 animate-ping opacity-75" />
+                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-emerald-400 shadow-2xl relative bg-slate-800">
+                  <img
+                    src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                    alt={targetUser?.name || 'Contact'}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="text-center space-y-1">
+                <h3 className="text-2xl font-black text-white">{targetUser?.name || 'Contact'}</h3>
+                <p className="text-sm font-semibold text-emerald-400 animate-pulse">
+                  Ringing Video Call...
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Media Permission Notice */}
+          {mediaError && (
+            <div className="absolute top-20 left-6 right-6 z-30 p-3 bg-red-600/90 text-white rounded-2xl flex items-center gap-2 text-xs font-bold shadow-xl">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{mediaError}</span>
+            </div>
+          )}
+
+          {/* Picture-in-Picture Local Video (Self View) */}
+          <div className="absolute bottom-24 right-5 w-40 sm:w-48 aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500/50 shadow-2xl bg-black z-20 group">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              muted
+              playsInline
+              className="w-full h-full object-cover transform scale-x-[-1]"
+            />
+            {!isVideoOn && (
+              <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center text-slate-400">
+                <VideoOff className="w-6 h-6 mb-1 text-slate-500" />
+                <span className="text-[10px] font-bold">Camera Off</span>
+              </div>
+            )}
+            <div className="absolute bottom-1.5 left-2 px-1.5 py-0.5 rounded-md bg-black/70 text-[10px] text-white font-semibold">
+              You
+            </div>
+          </div>
+        </div>
+
+        {/* Floating Call Bottom Controls Bar */}
+        <div className="p-4 bg-gradient-to-t from-black/90 via-black/70 to-transparent flex items-center justify-center gap-4 z-20">
+          {/* Mute Mic */}
+          <button
+            id="toggle-mic-btn"
+            type="button"
             onClick={() => setIsMuted(!isMuted)}
-            className={`p-4 rounded-full transition-all ${
-              isMuted 
-                ? 'bg-red-500/20 text-red-400 border border-red-500/40' 
-                : 'bg-gray-800 text-white hover:bg-gray-700'
+            className={`p-3.5 rounded-2xl transition-all cursor-pointer ${
+              isMuted
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700'
             }`}
             title={isMuted ? 'Unmute Mic' : 'Mute Mic'}
           >
-            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+            {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
           </button>
 
-          <button 
+          {/* Toggle Video */}
+          <button
+            id="toggle-video-btn"
+            type="button"
             onClick={() => setIsVideoOn(!isVideoOn)}
-            className={`p-4 rounded-full transition-all ${
-              !isVideoOn 
-                ? 'bg-red-500/20 text-red-400 border border-red-500/40' 
-                : 'bg-gray-800 text-white hover:bg-gray-700'
+            className={`p-3.5 rounded-2xl transition-all cursor-pointer ${
+              !isVideoOn
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700'
             }`}
-            title={isVideoOn ? 'Turn Off Camera' : 'Turn On Camera'}
+            title={isVideoOn ? 'Turn Off Video' : 'Turn On Video'}
           >
-            {isVideoOn ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
+            {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
           </button>
 
-          <button 
+          {/* Screen Share */}
+          <button
+            id="toggle-screenshare-btn"
+            type="button"
             onClick={toggleScreenShare}
-            className={`p-4 rounded-full transition-all ${
-              isScreenSharing 
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
-                : 'bg-gray-800 text-white hover:bg-gray-700'
+            className={`p-3.5 rounded-2xl transition-all cursor-pointer ${
+              isScreenSharing
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700'
             }`}
-            title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+            title={isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
           >
-            <Monitor className="w-6 h-6" />
+            <Monitor className="w-5 h-5" />
           </button>
 
-          <button 
-            onClick={handleEndCall}
-            className="p-5 bg-red-600 hover:bg-red-500 text-white rounded-full transition-all shadow-lg shadow-red-600/40 hover:scale-105 active:scale-95"
+          {/* End Call Button */}
+          <button
+            id="end-video-call-btn"
+            type="button"
+            onClick={handleEndCallAction}
+            className="p-4 px-6 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-95 text-white shadow-xl shadow-red-600/40 transition-all cursor-pointer flex items-center gap-2 font-bold text-sm"
             title="End Video Call"
           >
-            <PhoneOff className="w-7 h-7" />
+            <PhoneOff className="w-5 h-5" />
+            <span className="hidden sm:inline">End Call</span>
           </button>
         </div>
 

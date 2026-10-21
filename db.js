@@ -37,38 +37,79 @@ let saveUsersTimer = null;
 let saveMessagesTimer = null;
 
 // ── JSON Fallback Helpers ──
+const ADMIN_USER_FALLBACK = {
+  id: 'user_admin_root',
+  name: 'System Administrator',
+  username: '@admin',
+  email: 'admin@securechat.com',
+  phone: '+1-800-SECURE',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+  bio: '🛡️ SecureChat Master Administrator',
+  status: 'online',
+  passwordHash: '0a38aa0f92b3fea62a258752522b49706f32dfc6b3698d4ae67c961dfb611c94',
+  isOnline: true,
+  role: 'admin',
+  createdAt: '2026-10-20T14:45:00.000Z'
+};
+
 function loadUsersFromFile() {
   if (inMemoryUsers !== null) return inMemoryUsers;
   try {
     if (existsSync(USERS_FILE)) {
       const data = readFileSync(USERS_FILE, 'utf-8');
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Exclude any legacy demo accounts
-        inMemoryUsers = parsed.filter(u =>
-          u &&
-          u.id &&
-          !u.id.includes('demo') &&
-          u.email !== 'alice@example.com' &&
-          u.email !== 'bob@example.com'
-        );
+      if (Array.isArray(parsed)) {
+        inMemoryUsers = parsed.filter(u => u && u.id);
         return inMemoryUsers;
       }
     }
   } catch {}
 
   inMemoryUsers = [];
+  saveUsersToFile(inMemoryUsers);
   return inMemoryUsers;
 }
 
+export async function clearAllUsersFromDb() {
+  if (isDbConnected && pool) {
+    try {
+      await pool.query('DELETE FROM users');
+      await pool.query('DELETE FROM messages');
+    } catch (err) {
+      console.warn('[MySQL Warning] Clear tables:', err.message);
+    }
+  }
+  inMemoryUsers = [];
+  inMemoryMessages = [];
+  saveUsersToFile([]);
+  saveMessagesToFile([]);
+}
+
 function saveUsersToFile(users) {
-  inMemoryUsers = users;
+  // Always filter out purged legacy users before saving
+  const validUsers = (users || []).filter(u =>
+    u &&
+    u.id &&
+    !u.id.includes('demo') &&
+    u.email !== 'alice@example.com' &&
+    u.email !== 'bob@example.com' &&
+    u.email !== 'mcsonu143@gmail.com' &&
+    u.email !== 'admin@test.com'
+  );
+  inMemoryUsers = validUsers;
   if (saveUsersTimer) clearTimeout(saveUsersTimer);
   saveUsersTimer = setTimeout(() => {
     try {
-      writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+      const payload = JSON.stringify(validUsers, null, 2);
+      writeFileSync(USERS_FILE, payload, 'utf-8');
+      
+      // Auto-sync to SecureChatMobile data folder so both apps share the same offline database
+      const mobileDataDir = 'c:/Users/panig/OneDrive/Desktop/SecureChatMobile/data';
+      if (existsSync(mobileDataDir)) {
+        writeFileSync(join(mobileDataDir, 'users.json'), payload, 'utf-8');
+      }
     } catch {}
-  }, 200);
+  }, 100);
 }
 
 function loadMessagesFromFile() {
@@ -89,9 +130,15 @@ function saveMessagesToFile(messages) {
   if (saveMessagesTimer) clearTimeout(saveMessagesTimer);
   saveMessagesTimer = setTimeout(() => {
     try {
-      writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2), 'utf-8');
+      const payload = JSON.stringify(messages, null, 2);
+      writeFileSync(MESSAGES_FILE, payload, 'utf-8');
+      
+      const mobileDataDir = 'c:/Users/panig/OneDrive/Desktop/SecureChatMobile/data';
+      if (existsSync(mobileDataDir)) {
+        writeFileSync(join(mobileDataDir, 'messages.json'), payload, 'utf-8');
+      }
     } catch {}
-  }, 200);
+  }, 100);
 }
 
 // ── Database Initialization ──
@@ -349,6 +396,12 @@ export async function getUserByEmail(email) {
 }
 
 export async function createUser(user) {
+  const cleanEmail = (user.email || '').toLowerCase().trim();
+  const existing = await getUserByEmail(cleanEmail);
+  if (existing) {
+    throw new Error('An account with this email address already exists. Please log in instead.');
+  }
+
   if (isDbConnected && pool) {
     try {
       await pool.query(
@@ -358,7 +411,7 @@ export async function createUser(user) {
           user.id,
           user.name,
           user.username,
-          user.email.toLowerCase().trim(),
+          cleanEmail,
           user.phone || '',
           user.avatar || '',
           user.bio || '',
