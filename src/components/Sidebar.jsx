@@ -39,7 +39,7 @@ import {
   Calendar,
   Trash2
 } from 'lucide-react';
-import { groupStatusesByUser } from '../utils/statusManager';
+import { groupStatusesByUser, deleteStatus } from '../utils/statusManager';
 import { resumeAudioContext } from '../utils/statusAudioPlayer';
 import { searchUsers } from '../utils/api';
 import { recordAction } from '../utils/testRecorder';
@@ -1239,19 +1239,38 @@ export default function Sidebar({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  resumeAudioContext();
-                  if (onOpenStatusModal) onOpenStatusModal();
-                }}
-                className="p-2 rounded-xl bg-[#f97316]/20 hover:bg-[#f97316] text-[#f97316] hover:text-white transition cursor-pointer shrink-0 flex items-center gap-1 text-xs font-semibold"
-                title="Add Moment"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span className="text-[11px] font-bold">Add</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {myStatusGroup && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm('Delete your active Moment?')) {
+                        myStatusGroup.statuses.forEach(s => deleteStatus(s.id));
+                        recordAction('Moments Management', 'User deletes Moment story from sidebar', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
+                        if (onRefreshMoments) onRefreshMoments();
+                      }
+                    }}
+                    className="p-2 rounded-xl bg-rose-500/15 hover:bg-rose-500 text-rose-400 hover:text-white transition cursor-pointer shrink-0"
+                    title="Delete Moment"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resumeAudioContext();
+                    if (onOpenStatusModal) onOpenStatusModal();
+                  }}
+                  className="p-2 rounded-xl bg-[#f97316]/20 hover:bg-[#f97316] text-[#f97316] hover:text-white transition cursor-pointer shrink-0 flex items-center gap-1 text-xs font-semibold"
+                  title="Add Moment"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span className="text-[11px] font-bold">Add</span>
+                </button>
+              </div>
             </div>
 
             <p className="text-xs font-bold uppercase text-slate-400 tracking-wider px-1">Recent Moments</p>

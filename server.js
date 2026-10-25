@@ -513,52 +513,85 @@ app.post('/api/auth/send-otp', async (req, res) => {
     console.log(`⏳ Valid for 10 minutes (expires: ${new Date(expiresAt).toLocaleTimeString()})`);
     console.log(`======================================================\n`);
 
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #111b21; color: #e9edef; border-radius: 16px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h1 style="color: #f97316; margin: 0; font-size: 24px; font-weight: 700;">🔒 SecureChat Guard</h1>
+          <p style="color: #8696a0; font-size: 13px; margin-top: 6px;">End-to-End Encrypted Communication</p>
+        </div>
+        <div style="background: #202c33; padding: 28px; border-radius: 12px; text-align: center; border: 1px solid #2a3942;">
+          <p style="margin: 0 0 12px 0; color: #e9edef; font-size: 16px;">Hello <strong>${user.name}</strong>,</p>
+          <p style="margin: 0 0 20px 0; color: #8696a0; font-size: 14px; line-height: 1.5;">
+            We received a request to reset your password. Copy the 6-digit verification code below and paste it in the app:
+          </p>
+          <div style="background: #ea580c; color: #ffffff; font-size: 38px; font-weight: 800; letter-spacing: 12px; padding: 18px 24px; border-radius: 12px; display: inline-block; margin: 8px 0 18px 0; font-family: monospace; box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);">
+            ${otp}
+          </div>
+          <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 13px; font-weight: 600;">
+            📋 Copy this 6-digit code and paste it into the SecureChat app.
+          </p>
+          <p style="margin: 8px 0 0 0; color: #8696a0; font-size: 12px;">
+            ⏱️ Valid for <strong>10 minutes</strong>. Do not share this code with anyone.
+          </p>
+        </div>
+        <p style="text-align: center; color: #667781; font-size: 12px; margin-top: 24px;">
+          If you did not request this OTP, you can safely ignore this email.
+        </p>
+      </div>
+    `;
+
     let emailSent = false;
-    const transporter = getEmailTransporter();
 
-    if (transporter) {
+    // 1. Transactional Email API (Resend) if RESEND_API_KEY is configured
+    if (process.env.RESEND_API_KEY) {
       try {
-        const mailOptions = {
-          from: `"SecureChat Guard" <${process.env.GMAIL_USER || process.env.EMAIL_USER || 'no-reply@securechat.com'}>`,
-          to: cleanEmail,
-          subject: `Your SecureChat OTP: ${otp} (Password Reset)`,
-          text: `Hello ${user.name},\n\nYour SecureChat 6-digit password reset verification code is: ${otp}\n\nCopy this 6-digit code and paste it in the app to reset your password.\n\n⏱️ This code is valid for 10 minutes. Do not share this code with anyone.`,
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #111b21; color: #e9edef; border-radius: 16px;">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <h1 style="color: #f97316; margin: 0; font-size: 24px; font-weight: 700;">🔒 SecureChat Guard</h1>
-                <p style="color: #8696a0; font-size: 13px; margin-top: 6px;">End-to-End Encrypted Communication</p>
-              </div>
-              <div style="background: #202c33; padding: 28px; border-radius: 12px; text-align: center; border: 1px solid #2a3942;">
-                <p style="margin: 0 0 12px 0; color: #e9edef; font-size: 16px;">Hello <strong>${user.name}</strong>,</p>
-                <p style="margin: 0 0 20px 0; color: #8696a0; font-size: 14px; line-height: 1.5;">
-                  We received a request to reset your password. Copy the 6-digit verification code below and paste it in the app:
-                </p>
-                <div style="background: #ea580c; color: #ffffff; font-size: 38px; font-weight: 800; letter-spacing: 12px; padding: 18px 24px; border-radius: 12px; display: inline-block; margin: 8px 0 18px 0; font-family: monospace; box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);">
-                  ${otp}
-                </div>
-                <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 13px; font-weight: 600;">
-                  📋 Copy this 6-digit code and paste it into the SecureChat app.
-                </p>
-                <p style="margin: 8px 0 0 0; color: #8696a0; font-size: 12px;">
-                  ⏱️ Valid for <strong>10 minutes</strong>. Do not share this code with anyone.
-                </p>
-              </div>
-              <p style="text-align: center; color: #667781; font-size: 12px; margin-top: 24px;">
-                If you did not request this OTP, you can safely ignore this email.
-              </p>
-            </div>
-          `
-        };
-
-        await transporter.sendMail(mailOptions);
-        emailSent = true;
-        console.log(`✅ [Nodemailer] Successfully delivered clean OTP email to ${cleanEmail}`);
-      } catch (sendErr) {
-        console.warn(`⚠️ [Nodemailer Warning] Error sending to ${cleanEmail}:`, sendErr.message);
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: process.env.RESEND_FROM || 'SecureChat <onboarding@resend.dev>',
+            to: [cleanEmail],
+            subject: `Your SecureChat OTP: ${otp} (Password Reset)`,
+            html: emailHtml
+          })
+        });
+        if (resendRes.ok) {
+          emailSent = true;
+          console.log(`✅ [Resend API] Successfully delivered clean OTP email to ${cleanEmail}`);
+        } else {
+          const errData = await resendRes.json().catch(() => ({}));
+          console.warn(`⚠️ [Resend API Warning]:`, errData);
+        }
+      } catch (resendErr) {
+        console.warn(`⚠️ [Resend API Error]:`, resendErr.message);
       }
-    } else {
-      console.log(`ℹ️ [Notice] Gmail SMTP credentials not set in .env. OTP logged above for copy/paste.`);
+    }
+
+    // 2. Gmail SMTP / Custom SMTP Transporter Fallback
+    if (!emailSent) {
+      const transporter = getEmailTransporter();
+      if (transporter) {
+        try {
+          const mailOptions = {
+            from: `"SecureChat Guard" <${process.env.GMAIL_USER || process.env.EMAIL_USER || 'no-reply@securechat.com'}>`,
+            to: cleanEmail,
+            subject: `Your SecureChat OTP: ${otp} (Password Reset)`,
+            text: `Hello ${user.name},\n\nYour SecureChat 6-digit password reset verification code is: ${otp}\n\nCopy this 6-digit code and paste it in the app to reset your password.\n\n⏱️ This code is valid for 10 minutes. Do not share this code with anyone.`,
+            html: emailHtml
+          };
+
+          await transporter.sendMail(mailOptions);
+          emailSent = true;
+          console.log(`✅ [Nodemailer] Successfully delivered clean OTP email to ${cleanEmail}`);
+        } catch (sendErr) {
+          console.warn(`⚠️ [Nodemailer Warning] Error sending to ${cleanEmail}:`, sendErr.message);
+        }
+      } else {
+        console.log(`ℹ️ [Notice] Gmail SMTP credentials not set in .env. OTP logged above for copy/paste.`);
+      }
     }
 
     const clientSource = req.headers['x-client-app'] || (req.headers['user-agent']?.includes('Mobile') ? 'SecureChatMobile' : 'SecureChat');
@@ -968,11 +1001,19 @@ function loadMomentsFromFile() {
       const data = JSON.parse(readFileSync(MOMENTS_FILE, 'utf-8'));
       const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
       const now = Date.now();
-      return Array.isArray(data) ? data.filter(m => {
+      const rawList = Array.isArray(data) ? data : [];
+      const active = rawList.filter(m => {
         if (!m || !m.timestamp) return false;
         const ts = typeof m.timestamp === 'number' ? m.timestamp : new Date(m.timestamp).getTime();
-        return !isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS;
-      }) : [];
+        return !isNaN(ts) && (now - ts) >= 0 && (now - ts) < TWENTY_FOUR_HOURS;
+      });
+
+      // Automatically prune and persist if any expired moments were dropped
+      if (active.length !== rawList.length) {
+        saveMomentsToFile(active);
+        console.log(`🧹 [Moments Cleanup] Automatically purged ${rawList.length - active.length} expired moment(s) (>24h).`);
+      }
+      return active;
     }
   } catch {}
   return [];
@@ -989,6 +1030,13 @@ function saveMomentsToFile(moments) {
     console.error('Failed to save moments to file:', err);
   }
 }
+
+// Automatic 24-hour periodic cleanup daemon (runs every 60 seconds)
+setInterval(() => {
+  try {
+    loadMomentsFromFile();
+  } catch {}
+}, 60 * 1000);
 
 function loadFriendsFromFile() {
   try {

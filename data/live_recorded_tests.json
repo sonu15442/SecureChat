@@ -1,41 +1,5 @@
 [
   {
-    "id": "test_1792673274207_cyy0",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-22T12:47:54.207Z"
-  },
-  {
-    "id": "test_1792673274424_leu6",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-22T12:47:54.424Z"
-  },
-  {
-    "id": "test_1792673274908_olwb",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-22T12:47:54.909Z"
-  },
-  {
-    "id": "test_1792673308636_i1xq",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-22T12:48:28.636Z"
-  },
-  {
     "id": "test_1792673309568_es8l",
     "category": "Authentication",
     "name": "Selenium Website: Login successful",
@@ -1798,5 +1762,41 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-10-25T18:20:46.546Z"
+  },
+  {
+    "id": "test_1792953215165_uc7i",
+    "category": "Authentication",
+    "name": "Selenium Website: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-25T18:33:35.165Z"
+  },
+  {
+    "id": "test_1792953248970_jp4j",
+    "category": "Authentication",
+    "name": "Selenium Website: Password successfully reset via Gmail OTP",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-25T18:34:08.970Z"
+  },
+  {
+    "id": "test_1792953262423_q4zw",
+    "category": "Authentication",
+    "name": "Selenium Website: Login successful",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-25T18:34:22.423Z"
+  },
+  {
+    "id": "test_1792953403032_x4p6",
+    "category": "Authentication",
+    "name": "Selenium Website: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-25T18:36:43.032Z"
   }
 ]

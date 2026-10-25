@@ -102,6 +102,14 @@ export function getActiveStatuses() {
       })
       .sort((a, b) => b.timestamp - a.timestamp);
     inMemoryStatuses = valid;
+
+    // Persist cleaned list back to localStorage to drop expired moments automatically
+    if (valid.length !== localAll.length) {
+      try {
+        localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(valid));
+      } catch {}
+    }
+
     return valid;
   } catch (err) {
     console.warn('Failed to parse localStorage statuses:', err);

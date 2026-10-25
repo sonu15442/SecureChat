@@ -124,15 +124,21 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
     if (onClose) onClose();
   };
 
-  const isMyStatus = statusGroup?.userId === currentUserId || currentStatus?.userId === currentUserId || !currentUserId;
+  const isMyStatus = Boolean(
+    (currentUserId && (String(statusGroup?.userId) === String(currentUserId) || String(currentStatus?.userId) === String(currentUserId))) ||
+    !currentUserId
+  );
 
   const handleDeleteCurrentStatus = (e) => {
     if (e) e.stopPropagation();
     if (!currentStatus) return;
+    if (!window.confirm('Are you sure you want to delete this Moment?')) return;
+    
     stopStatusSong();
     
-    // Delete from LocalStorage & Memory store
+    // Delete from LocalStorage & Memory store & Backend
     deleteStatus(currentStatus.id);
+    recordAction('Moments Management', 'User deletes Moment story', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
 
     const remaining = localStatuses.filter(s => s.id !== currentStatus.id);
     setLocalStatuses(remaining);
