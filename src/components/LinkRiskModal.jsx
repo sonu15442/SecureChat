@@ -33,13 +33,13 @@ export default function LinkRiskModal({ linkData, onClose }) {
         <div className={`p-5 flex items-center justify-between border-b ${
           isDangerous ? 'bg-red-500/10 border-red-500/30' :
           isSuspicious ? 'bg-amber-500/10 border-amber-500/30' :
-          'bg-emerald-500/10 border-emerald-500/30'
+          'bg-orange-500/10 border-orange-500/30'
         }`}>
           <div className="flex items-center gap-3">
             <div className={`p-3 rounded-xl ${
               isDangerous ? 'bg-red-500/20 text-red-400' :
               isSuspicious ? 'bg-amber-500/20 text-amber-400' :
-              'bg-emerald-500/20 text-emerald-400'
+              'bg-orange-500/20 text-orange-400'
             }`}>
               {isDangerous ? <ShieldAlert className="w-7 h-7 pulse-shield" /> :
                isSuspicious ? <AlertTriangle className="w-7 h-7" /> :
@@ -51,7 +51,7 @@ export default function LinkRiskModal({ linkData, onClose }) {
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${
                   isDangerous ? 'bg-red-500/20 text-red-300 border border-red-500/40' :
                   isSuspicious ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
-                  'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  'bg-orange-500/20 text-orange-300 border border-orange-500/40'
                 }`}>
                   {status}
                 </span>
@@ -74,12 +74,12 @@ export default function LinkRiskModal({ linkData, onClose }) {
           {/* Target URL Preview Card */}
           <div className="p-3.5 bg-gray-900/80 rounded-xl border border-gray-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Globe className="w-4 h-4 text-orange-400 shrink-0" />
               <span className="text-sm font-mono text-gray-200 truncate select-all">{url}</span>
             </div>
             <button 
               onClick={copyToClipboard}
-              className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded-lg transition"
+              className="p-1.5 text-gray-400 hover:text-orange-400 hover:bg-gray-800 rounded-lg transition"
               title="Copy link"
             >
               <Copy className="w-4 h-4" />
@@ -90,12 +90,12 @@ export default function LinkRiskModal({ linkData, onClose }) {
           <div className="grid grid-cols-2 gap-4">
             
             {/* Safe Percentage Card */}
-            <div className="p-4 rounded-xl bg-gray-900/60 border border-emerald-500/20 text-center relative overflow-hidden">
-              <div className="text-xs font-medium text-emerald-400 uppercase tracking-wider mb-1">Safety Index</div>
-              <div className="text-3xl font-extrabold text-emerald-400">{safePercentage}%</div>
+            <div className="p-4 rounded-xl bg-gray-900/60 border border-orange-500/20 text-center relative overflow-hidden">
+              <div className="text-xs font-medium text-orange-400 uppercase tracking-wider mb-1">Safety Index</div>
+              <div className="text-3xl font-extrabold text-orange-400">{safePercentage}%</div>
               <div className="w-full bg-gray-800 h-2 rounded-full mt-2 overflow-hidden">
                 <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                  className="bg-orange-500 h-full rounded-full transition-all duration-500" 
                   style={{ width: `${safePercentage}%` }}
                 />
               </div>
@@ -150,13 +150,13 @@ export default function LinkRiskModal({ linkData, onClose }) {
           {safeFactors.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <CheckCircle2 className="w-4 h-4 text-orange-400" />
                 Security Checks Passed
               </h4>
               <div className="flex flex-wrap gap-2">
                 {safeFactors.map((sf, idx) => (
-                  <span key={idx} className="text-xs px-3 py-1 bg-emerald-950/30 text-emerald-300 border border-emerald-500/20 rounded-lg flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span key={idx} className="text-xs px-3 py-1 bg-orange-950/30 text-orange-300 border border-orange-500/20 rounded-lg flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-orange-400" />
                     {sf}
                   </span>
                 ))}
@@ -178,7 +178,7 @@ export default function LinkRiskModal({ linkData, onClose }) {
           <div className="flex items-center gap-2">
             <button 
               onClick={copyToClipboard}
-              className="px-4 py-2 text-sm font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl transition flex items-center gap-1.5"
+              className="px-4 py-2 text-sm font-medium text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 rounded-xl transition flex items-center gap-1.5"
             >
               Copy Link
             </button>
@@ -189,7 +189,7 @@ export default function LinkRiskModal({ linkData, onClose }) {
               className={`px-4 py-2 text-sm font-medium rounded-xl transition flex items-center gap-1.5 ${
                 isDangerous 
                   ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20' 
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+                  : 'bg-orange-600 hover:bg-orange-500 text-white shadow-lg shadow-orange-600/20'
               }`}
             >
               <span>{isDangerous ? 'Proceed With Caution' : 'Open Link'}</span>

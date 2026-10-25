@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 __pycache__/
 *.pyc
+scratch/
+app-debug.apk
+scripts/test-moment.js
+*.png
+!public/*.png

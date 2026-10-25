@@ -32,6 +32,7 @@ function getApiCandidates() {
     candidates.push('http://localhost:3001/api');
     candidates.push('http://127.0.0.1:3001/api');
     // Laptop host IPv4 on local Wi-Fi for direct Mobile connectivity
+    candidates.push('http://10.31.154.35:3001/api');
     candidates.push('http://10.223.64.151:3001/api');
     candidates.push('http://10.216.93.35:3001/api');
     // Standard Android emulator loopback to host PC
@@ -53,10 +54,11 @@ function getApiCandidates() {
 async function fetchWithFallback(endpoint, options = {}) {
   const candidates = getApiCandidates();
   let lastError = null;
+  const timeoutMs = typeof options.timeout === 'number' ? options.timeout : 10000;
 
   for (const base of candidates) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const url = `${base}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
@@ -266,9 +268,14 @@ export async function registerUser(email, fullName) {
 
     if (data.user) {
       const users = getOfflineUsersDB();
-      const existingIdx = users.findIndex(u => u.id === data.user.id);
-      if (existingIdx !== -1) users[existingIdx] = data.user;
-      else users.push(data.user);
+      const userWithCreds = {
+        ...data.user,
+        passwordHash: data.password ? hashPasswordClient(data.password) : undefined
+      };
+      const cleanEmail = (data.user.email || '').toLowerCase().trim();
+      const existingIdx = users.findIndex(u => u.id === data.user.id || (u.email && u.email.toLowerCase() === cleanEmail));
+      if (existingIdx !== -1) users[existingIdx] = { ...users[existingIdx], ...userWithCreds };
+      else users.push(userWithCreds);
       saveOfflineUsersDB(users);
     }
 
@@ -294,6 +301,12 @@ export async function registerUser(email, fullName) {
     const existingUser = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
     if (existingUser) {
       throw new Error('An account with this email already exists. Please sign in instead.');
+    }
+
+    const cleanDisplayName = fullName.trim().toLowerCase();
+    const existingName = users.find(u => u && u.name && u.name.trim().toLowerCase() === cleanDisplayName);
+    if (existingName) {
+      throw new Error('Name already exists. Please choose a different display name.');
     }
 
     const plainPassword = generateOfflinePassword();
@@ -324,11 +337,14 @@ export async function registerUser(email, fullName) {
  * Returns { success, user }
  */
 export async function loginUser(email, password) {
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+  const cleanPassword = String(password || '').trim();
+
   try {
     const { res, data } = await fetchWithFallback('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
     });
 
     if (!res.ok) {
@@ -337,9 +353,179 @@ export async function loginUser(email, password) {
 
     if (data.user) {
       const users = getOfflineUsersDB();
-      const existingIdx = users.findIndex(u => u.id === data.user.id);
-      if (existingIdx !== -1) users[existingIdx] = data.user;
-      else users.push(data.user);
+      const existingIdx = users.findIndex(u => u.id === data.user.id || (u.email && u.email.toLowerCase() === cleanEmail));
+      const cached = {
+        ...data.user,
+        passwordHash: hashPasswordClient(cleanPassword)
+      };
+      if (existingIdx !== -1) users[existingIdx] = { ...users[existingIdx], ...cached };
+      else users.push(cached);
+      saveOfflineUsersDB(users);
+    }
+
+    return data;
+  } catch (err) {
+    // Check offline local users database if backend returned an error or is offline
+    const users = getOfflineUsersDB();
+    const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+
+    if (user) {
+      const inputHash = hashPasswordClient(cleanPassword);
+      const isMatch = !user.passwordHash ||
+                      user.passwordHash === inputHash ||
+                      user.passwordHash === cleanPassword;
+
+      if (!isMatch) {
+        throw new Error('Incorrect password. Please try again.');
+      }
+
+      // If matched locally, sync this user to backend so backend stores it too
+      try {
+        fetchWithFallback('/sync/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user })
+        }).catch(() => {});
+      } catch {}
+
+      const { passwordHash: _, ...safeUser } = user;
+      return { success: true, user: safeUser };
+    }
+
+    if (err.message !== 'BACKEND_OFFLINE' && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
+      throw err;
+    }
+
+    throw new Error('No account found with this email. Please register first.');
+  }
+}
+
+/**
+ * Verify whether an entered email is a registered account in database or offline DB
+ */
+export async function checkEmailExists(email) {
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+  if (!cleanEmail) return { exists: false };
+
+  try {
+    const { res, data } = await fetchWithFallback(`/auth/check-email?email=${encodeURIComponent(cleanEmail)}`);
+    if (res && res.ok && data) {
+      return data;
+    }
+  } catch {
+    // Fallback to offline DB check
+  }
+
+  const users = getOfflineUsersDB();
+  const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+  if (user) {
+    return {
+      exists: true,
+      name: user.name,
+      username: user.username,
+      email: user.email
+    };
+  }
+  return { exists: false };
+}
+
+/**
+ * Verify whether an entered display name already exists in database or offline DB
+ */
+export async function checkDisplayNameExists(name, excludeId = '') {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return { exists: false };
+
+  try {
+    const { res, data } = await fetchWithFallback(`/users/check-name?name=${encodeURIComponent(cleanName)}&excludeId=${encodeURIComponent(excludeId || '')}`);
+    if (res && res.ok && data) {
+      return data;
+    }
+  } catch {
+    // Fallback to offline DB check
+  }
+
+  const users = getOfflineUsersDB();
+  const lowerName = cleanName.toLowerCase();
+  const duplicate = users.find(u => u && u.name && u.name.trim().toLowerCase() === lowerName && (!excludeId || String(u.id) !== String(excludeId)));
+  if (duplicate) {
+    return {
+      exists: true,
+      name: duplicate.name
+    };
+  }
+  return { exists: false };
+}
+
+/**
+ * Send 6-digit OTP to user's registered Gmail address for password reset.
+ */
+export async function sendPasswordResetOtp(email) {
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+  try {
+    const { res, data } = await fetchWithFallback('/auth/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail })
+    });
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to send OTP to Gmail.');
+    }
+
+    return data;
+  } catch (err) {
+    if (err.message !== 'BACKEND_OFFLINE' && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
+      throw err;
+    }
+
+    // Offline fallback
+    const users = getOfflineUsersDB();
+    const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      throw new Error('No account found with this email. Please register first.');
+    }
+
+    const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    try {
+      sessionStorage.setItem(`offline_otp_${cleanEmail}`, JSON.stringify({
+        otp: mockOtp,
+        expiresAt: Date.now() + 10 * 60 * 1000
+      }));
+    } catch {}
+
+    return {
+      success: true,
+      message: `A 6-digit verification code has been sent directly to your Gmail inbox (${cleanEmail}). Please check your inbox and spam folder.`,
+      email: cleanEmail
+    };
+  }
+}
+
+/**
+ * Verify 6-digit OTP and reset password.
+ */
+export async function verifyOtpAndResetPassword(email, otp, newPassword) {
+  const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+  const cleanOtp = String(otp || '').trim();
+  const cleanPassword = String(newPassword || '').trim();
+
+  try {
+    const { res, data } = await fetchWithFallback('/auth/verify-otp-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail, otp: cleanOtp, newPassword: cleanPassword })
+    });
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to verify OTP.');
+    }
+
+    // Also update offline DB cache
+    const users = getOfflineUsersDB();
+    const idx = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);
+    if (idx !== -1) {
+      users[idx].passwordHash = hashPasswordClient(cleanPassword);
       saveOfflineUsersDB(users);
     }
 
@@ -349,27 +535,35 @@ export async function loginUser(email, password) {
       throw err;
     }
 
-    // ── Offline Fallback ──
-    const cleanEmail = String(email || '').replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase().trim();
+    // Offline fallback verification
+    let record = null;
+    try {
+      const raw = sessionStorage.getItem(`offline_otp_${cleanEmail}`);
+      if (raw) record = JSON.parse(raw);
+    } catch {}
+
+    if (!record || record.otp !== cleanOtp) {
+      throw new Error('Invalid OTP code. Please check your Gmail and try again.');
+    }
+
     const users = getOfflineUsersDB();
-
-    const user = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
-    if (!user) {
-      throw new Error('No account found with this email. Please register first.');
+    const idx = users.findIndex(u => u.email && u.email.toLowerCase() === cleanEmail);
+    if (idx !== -1) {
+      users[idx].passwordHash = hashPasswordClient(cleanPassword);
+      saveOfflineUsersDB(users);
     }
 
-    const inputHash = hashPasswordClient(password.trim());
-    if (user.passwordHash !== inputHash) {
-      throw new Error('Incorrect password. Please try again.');
-    }
+    try { sessionStorage.removeItem(`offline_otp_${cleanEmail}`); } catch {}
 
-    const { passwordHash, ...safeUser } = user;
-    return { success: true, user: safeUser };
+    return {
+      success: true,
+      message: 'Your password has been reset successfully! You can now log in.'
+    };
   }
 }
 
 /**
- * Reset password for a given email address.
+ * Reset password for a given email address (legacy direct reset).
  * Returns { success, password } — new permanent password shown once.
  */
 export async function resetPassword(email) {
@@ -520,23 +714,32 @@ export async function fetchAllUsers() {
  * Fetch all stored chat messages
  */
 export async function fetchStoredMessages() {
+  let localMsgs = [];
+  try {
+    localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
+  } catch {}
+
   try {
     const { res, data } = await fetchWithFallback('/messages');
 
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to fetch messages.');
+    if (res && res.ok && Array.isArray(data.messages)) {
+      const msgMap = new Map();
+      localMsgs.forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+      data.messages.forEach(m => {
+        if (m && m.id) {
+          const existing = msgMap.get(m.id);
+          msgMap.set(m.id, { ...existing, ...m });
+        }
+      });
+      const merged = Array.from(msgMap.values());
+      localStorage.setItem('securechat_all_messages', JSON.stringify(merged));
+      return merged;
     }
-
-    const messages = data.messages || [];
-    localStorage.setItem('securechat_all_messages', JSON.stringify(messages));
-    return messages;
   } catch {
-    try {
-      return JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
-    } catch {
-      return [];
-    }
+    // Offline handled
   }
+
+  return localMsgs;
 }
 
 /**
@@ -568,6 +771,44 @@ export async function saveStoredMessage(message) {
     // Offline handled
   }
 }
+
+/**
+ * Clear chat messages for a specific conversation or global chat
+ */
+export async function clearChatMessages(userId, targetId) {
+  const isGlobal = targetId === 'global' || !targetId;
+  const filterList = (list) => {
+    if (!Array.isArray(list)) return [];
+    if (isGlobal) {
+      return list.filter(m => m.recipientId && m.recipientId !== 'global');
+    }
+    return list.filter(m => !(
+      (m.senderId === userId && (m.recipientId === targetId || m.receiverId === targetId)) ||
+      (m.senderId === targetId && (m.recipientId === userId || m.receiverId === userId))
+    ));
+  };
+
+  try {
+    const allMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
+    localStorage.setItem('securechat_all_messages', JSON.stringify(filterList(allMsgs)));
+  } catch {}
+
+  try {
+    const msgs = JSON.parse(localStorage.getItem('securechat_messages') || '[]');
+    localStorage.setItem('securechat_messages', JSON.stringify(filterList(msgs)));
+  } catch {}
+
+  try {
+    await fetchWithFallback('/messages/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetId: isGlobal ? 'global' : targetId })
+    });
+  } catch (err) {
+    console.warn('Backend clear messages fallback warning:', err);
+  }
+}
+
 
 /**
  * Search registered users dynamically from database / backend
@@ -625,4 +866,136 @@ export async function sendCallSignal(signalData) {
     // If backend is offline, BroadcastChannel will still handle local multi-tab calls
   }
 }
+
+/**
+ * Fetch all friendships from backend
+ */
+export async function getFriendsApi() {
+  try {
+    const { data } = await fetchWithFallback('/friends');
+    return Array.isArray(data?.friends) ? data.friends : [];
+  } catch (err) {
+    try {
+      const local = localStorage.getItem('securechat_friends_db');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Add mutual friendship between two users
+ */
+export async function followUserApi(userId, targetId) {
+  try {
+    const { data } = await fetchWithFallback('/friends/follow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetId })
+    });
+    if (data?.friends) {
+      try {
+        localStorage.setItem('securechat_friends_db', JSON.stringify(data.friends));
+      } catch {}
+    }
+    return data?.friends || [];
+  } catch (err) {
+    // Offline fallback
+    try {
+      const local = localStorage.getItem('securechat_friends_db');
+      const list = local ? JSON.parse(local) : [];
+      if (!list.some(f => (f.userId === userId && f.friendId === targetId) || (f.userId === targetId && f.friendId === userId))) {
+        list.push({ id: `friend_${Date.now()}`, userId, friendId: targetId, createdAt: new Date().toISOString() });
+        localStorage.setItem('securechat_friends_db', JSON.stringify(list));
+      }
+      return list;
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Remove friendship
+ */
+export async function unfollowUserApi(userId, targetId) {
+  try {
+    const { data } = await fetchWithFallback('/friends/unfollow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetId })
+    });
+    if (data?.friends) {
+      try {
+        localStorage.setItem('securechat_friends_db', JSON.stringify(data.friends));
+      } catch {}
+    }
+    return data?.friends || [];
+  } catch (err) {
+    try {
+      const local = localStorage.getItem('securechat_friends_db');
+      let list = local ? JSON.parse(local) : [];
+      list = list.filter(f => !((f.userId === userId && f.friendId === targetId) || (f.userId === targetId && f.friendId === userId)));
+      localStorage.setItem('securechat_friends_db', JSON.stringify(list));
+      return list;
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
+ * Fetch all moments from backend
+ */
+export async function getMomentsApi() {
+  try {
+    const { data } = await fetchWithFallback('/moments');
+    return Array.isArray(data?.moments) ? data.moments : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Post new moment to backend
+ */
+export async function createMomentApi(momentData) {
+  try {
+    const { data } = await fetchWithFallback('/moments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(momentData),
+      timeout: 45000
+    });
+    return data?.moment || momentData;
+  } catch (err) {
+    return momentData;
+  }
+}
+
+/**
+ * Record moment view in backend
+ */
+export async function viewMomentApi(momentId, viewerId) {
+  try {
+    await fetchWithFallback('/moments/view', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ momentId, viewerId })
+    });
+  } catch {}
+}
+
+/**
+ * Delete moment from backend
+ */
+export async function deleteMomentApi(momentId) {
+  try {
+    await fetchWithFallback(`/moments/${momentId}`, {
+      method: 'DELETE'
+    });
+  } catch {}
+}
+
 

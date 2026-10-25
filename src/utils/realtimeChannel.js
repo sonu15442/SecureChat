@@ -59,6 +59,9 @@ export function initChannel(user) {
       case 'typing':
         emit('typing', payload);
         break;
+      case 'messages_cleared':
+        emit('messages_cleared', payload);
+        break;
       case 'call_signal':
         emit('call_signal', payload);
         break;
@@ -103,6 +106,11 @@ export function broadcastReadReceipt(messageIds, status, readerId, senderId) {
 export function broadcastTyping(userId, userName) {
   broadcastRaw('typing', { userId, userName, timestamp: Date.now() });
 }
+
+export function broadcastMessageClear(payload) {
+  broadcastRaw('messages_cleared', payload);
+}
+
 
 export function broadcastUserUpdated(user) {
   currentUserData = user;

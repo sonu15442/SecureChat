@@ -1,13 +1,128 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, Paperclip, Phone, Video, ShieldCheck, ShieldAlert, Check, CheckCheck, Lock, X, Users, Search, MessageCircle, ArrowLeft, HelpCircle, Info, Sparkles, MessageSquare, Radio, Shield, Sun, Moon } from 'lucide-react';
-import { extractUrls, analyzeUrl } from '../utils/linkDetector';
-import { EMOJI_CATEGORIES } from '../utils/initialData';
-import { broadcastTyping, on } from '../utils/realtimeChannel';
-import { searchUsers } from '../utils/api';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  Send,
+  Paperclip,
+  Smile,
+  ShieldAlert,
+  ShieldCheck,
+  Check,
+  CheckCheck,
+  Phone,
+  Video,
+  MoreVertical,
+  X,
+  Search,
+  MessageCircle,
+  Users,
+  Lock,
+  ArrowLeft,
+  FileText,
+  Download,
+  Camera,
+  Mic,
+  Image as ImageIcon,
+  Headphones,
+  MapPin,
+  User,
+  Info,
+  Palette,
+  Trash2,
+  Settings
+} from 'lucide-react';
 import { recordAction } from '../utils/testRecorder';
+import { analyzeUrl } from '../utils/linkDetector';
+import { broadcastTyping } from '../utils/realtimeChannel';
+import { searchUsers } from '../utils/api';
+
+const EMOJI_CATEGORIES = [
+  {
+    name: 'Smileys & Faces',
+    icon: '😀',
+    emojis: [
+      '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','🫠','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🫣','🤗','🫡','🤔','🤫','🫠','🤐','🤨','😐','😑','😶','🫥','🙄','😬','🤥','🫨','😌','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥴','😵','😵‍💫','🤠','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾'
+    ]
+  },
+  {
+    name: 'People & Gestures',
+    icon: '👋',
+    emojis: [
+      '👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','🫰','🫵','👌','🤌','🤏','✌️','🤞','🫶','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄','🫦','👶','👧','🧒','👦','👩','🧑','👨','🧑‍🦱','👩‍🦱','🧑‍🦰','👨‍🦰','👱‍♀️','👱‍♂️','🧓','👵','👴','👲','👳‍♀️','👳‍♂️','🧕','👮‍♀️','👮‍♂️','👷‍♀️','👷‍♂️','💂‍♀️','💂‍♂️','🕵️‍♀️','🕵️‍♂️','🧑‍⚕️','👩‍⚕️','👨‍⚕️'
+    ]
+  },
+  {
+    name: 'Hearts & Love',
+    icon: '❤️',
+    emojis: [
+      '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','🔯','🕯️','✨','⭐','🌟','💫','⚡','💥','🔥','💯','💢','💨','💦','💤','🕳️'
+    ]
+  },
+  {
+    name: 'Animals & Nature',
+    icon: '🐶',
+    emojis: [
+      '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷️','🕸️','🦂','🐢','🐍','🦎','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🦭','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🐓','🦃','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿️','🦔','🌸','💮','🏵️','🌹','🥀','🌺','🌻','🌼','🌷','🌱','🪴','🌲','🌳','🌴','🌵','🌾','🌿','☘️','🍀','🍁','🍂','🍃'
+    ]
+  },
+  {
+    name: 'Food & Drinks',
+    icon: '🍔',
+    emojis: [
+      '🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🌮','🌯','🫔','🥙','🧆','🥘','🍲','🫕','🥣','🥗','🍿','🧂','🥫','🍱','🍘','🍙','🍚','🍛','🍜','🍝','🍢','🍣','🍤','🍥','🥮','🍡','🥟','🥠','🥡','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','🍼','🥛','☕','🫖','🍵','🍶','🍾','🍷','🍸','🍹','🍺','🍻','🥂','🥃','🥤','🧋','🧃','🧉','🧊'
+    ]
+  },
+  {
+    name: 'Activities & Sports',
+    icon: '⚽',
+    emojis: [
+      '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️‍♀️','🏋️‍♂️','🤼‍♀️','🤼‍♂️','🤸‍♀️','🤸‍♂️','⛹️‍♀️','⛹️‍♂️','🤺','🤾‍♀️','🤾‍♂️','🏌️‍♀️','🏌️‍♂️','🏇','🧘‍♀️','🧘‍♂️','🏄‍♀️','🏄‍♂️','🏊‍♀️','🏊‍♂️','🤽‍♀️','🤽‍♂️','🚣‍♀️','🚣‍♂️','🧗‍♀️','🧗‍♂️','🚵‍♀️','🚵‍♂️','🚴‍♀️','🚴‍♂️','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹‍♀️','🤹‍♂️','🎭','🩰','🎨','🎬','🎤','🎧','🎼','🎵','🎶','🎹','🥁','🎷','🎺','🎸','🪕','🎻','🎲','🎯','🎳','🎮','🕹️'
+    ]
+  },
+  {
+    name: 'Travel & Places',
+    icon: '🚗',
+    emojis: [
+      '🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🦯','🦽','🦼','🛴','🚲','🛵','🏍️','🛺','🚨','🚔','🚍','🚘','🚖','🚡','🚠','🚟','🚃','🚋','🚞','🚝','🚄','🚅','🚈','🚂','🚆','🚇','🚊','🚉','✈️','🛫','🛬','🛩️','💺','🛰️','🚀','🛸','🚁','🛶','⛵','🚤','🛥️','🛳️','⛴️','🚢','⚓','🛟','⛽','🚧','🚦','🚥','🗺️','🗿','🗽','🗼','🏰','🏯','🏟️','🎡','🎢','🎠','⛲','⛱️','🏖️','🏝️','🏜️','🌋','⛰️','🏔️','🗻','🏕️','⛺','🏠','🏡','🏘️','🏚️','🏗️','🏭','🏢','🏬','🏣','🏤','🏥','🏦','🏨','🏪','🏫','🏛️','⛪','🕌','🕍','🛕','🕋'
+    ]
+  },
+  {
+    name: 'Objects & Tools',
+    icon: '💡',
+    emojis: [
+      '⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','🕹️','🗜️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🪫','🔌','💡','🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒️','🛠️','⛏️','🪚','🔩','⚙️','🪤','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','💈','🧪','🧫','🧬','🔬','🔭','🩺','💊','🩹','🚪','🪞','🪟','🛏️','🛋️','🪑','🚽','🪠','🚿','🛁','🪒','🧴','🧻','🧹','🧺','🧽','🧼','🪥','🛒','🔑','🗝️','🔒','🔓','🔏','🔐'
+    ]
+  }
+];
+
+const EMOJI_KEYWORD_MAP = {
+  smile: ['😀','😃','😄','😁','😆','😅','😂','🤣','🙂','🙃','🫠','😉','😊','😇','🥰','😍','🤩'],
+  laugh: ['😄','😁','😆','😅','😂','🤣'],
+  happy: ['😀','😃','😄','😁','😊','😇','🥰','😍','🤩','🥳'],
+  love: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','💕','💞','💓','💗','💖','💘','💝','🥰','😍','😘'],
+  heart: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝'],
+  cry: ['😢','😭','😿','🥹','🥺','😥','😓'],
+  sad: ['😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭'],
+  angry: ['😤','😠','😡','🤬','👿','😾'],
+  fire: ['🔥','❤️‍🔥','⚡','💥'],
+  cool: ['😎','🥶','🤙'],
+  kiss: ['😘','😗','😚','😙','💋'],
+  wink: ['😉','😜','🤪','😝'],
+  hand: ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','🫰','🫵','👌','🤌','🤏','✌️','🤞','🫶','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏'],
+  thumbs: ['👍','👎'],
+  clap: ['👏','🙌'],
+  party: ['🥳','🎉','🎊','🎈','🎂','🎁'],
+  dog: ['🐶','🐕','🐩','🦮','🐕‍🦺'],
+  cat: ['🐱','🐈','🐈‍⬛','😺','😸','😹','😻','😼','😽','🙀','😿','😾'],
+  food: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🥪','🌮','🌯'],
+  drink: ['🍼','🥛','☕','🫖','🍵','🍶','🍾','🍷','🍸','🍹','🍺','🍻','🥂','🥃','🥤','🧋','🧃','🧉','🧊'],
+  car: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜'],
+  star: ['⭐','🌟','💫','✨','🤩'],
+  music: ['🎤','🎧','🎼','🎵','🎶','🎹','🥁','🎷','🎺','🎸','🪕','🎻'],
+  sport: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋']
+};
+
 
 export default function ChatPanel({
-  messages,
+  messages = [],
   allUsers = [],
   activeChatTarget = 'global',
   onSelectChatTarget,
@@ -16,43 +131,166 @@ export default function ChatPanel({
   onOpenVoiceCall,
   onOpenVideoCall,
   currentUser,
-  onlineUsers,
+  onlineUsers = [],
   onToggleMobileSidebar,
-  theme = 'light',
-  onToggleTheme
+  theme = 'dark',
+  onToggleTheme,
+  onOpenSettings,
+  onClearChat
 }) {
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedAudio, setSelectedAudio] = useState(null);
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [selectedDocument, setSelectedDocument] = useState(null);
   const [previewImageModal, setPreviewImageModal] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [activeEmojiCategory, setActiveEmojiCategory] = useState(0);
-  const [typingUsers, setTypingUsers] = useState([]);
-  
-  // ── Search State ──
   const [showSearchHeader, setShowSearchHeader] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchedUserModal, setSearchedUserModal] = useState(null);
-  const [showGuideBanner, setShowGuideBanner] = useState(() => {
-    try {
-      return localStorage.getItem('securechat_guide_dismissed') !== 'true';
-    } catch {
-      return true;
-    }
-  });
+  const [showEncryptionInfo, setShowEncryptionInfo] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showLaptopWebcam, setShowLaptopWebcam] = useState(false);
+  const [emojiSearch, setEmojiSearch] = useState('');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const mobileCameraInputRef = useRef(null);
+  const audioFileInputRef = useRef(null);
+  const documentFileInputRef = useRef(null);
+  const videoFileInputRef = useRef(null);
+  const emojiButtonRef = useRef(null);
   const emojiPickerRef = useRef(null);
+  const moreMenuBtnRef = useRef(null);
+  const moreMenuRef = useRef(null);
+  const webcamVideoRef = useRef(null);
+  const webcamStreamRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+  const recordingStreamRef = useRef(null);
+  const recordingSecondsRef = useRef(0);
 
+  const startAudioRecording = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Live audio recording is not supported on this device/browser.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      let recorder;
+      try {
+        recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      } catch {
+        recorder = new MediaRecorder(stream);
+      }
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const mime = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: mime });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Audio = reader.result;
+          const dur = recordingSecondsRef.current > 0 ? `${recordingSecondsRef.current}s` : 'Voice Note';
+          if (onSendMessage && base64Audio) {
+            onSendMessage({
+              text: '🎤 Voice Note',
+              audioUrl: base64Audio,
+              audioName: `Voice Note (${dur}).webm`
+            });
+            recordAction('CRUD Operations', 'User sends recorded audio voice note', { duration: 0.05, status: 'PASSED', source: 'SecureChat' });
+          }
+        };
+        reader.readAsDataURL(blob);
+
+        if (recordingStreamRef.current) {
+          recordingStreamRef.current.getTracks().forEach(t => t.stop());
+          recordingStreamRef.current = null;
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(200);
+      setIsRecordingAudio(true);
+      setRecordingSeconds(0);
+      recordingSecondsRef.current = 0;
+
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => {
+          const next = prev + 1;
+          recordingSecondsRef.current = next;
+          return next;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error('Audio recording failed:', err);
+      alert('Microphone permission required to record audio voice notes.');
+    }
+  };
+
+  const stopAndSendAudioRecording = () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecordingAudio(false);
+  };
+
+  const cancelAudioRecording = () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingStreamRef.current) {
+      recordingStreamRef.current.getTracks().forEach(t => t.stop());
+      recordingStreamRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecordingAudio(false);
+    setRecordingSeconds(0);
+  };
+
+  const formatRecordTimer = (sec) => {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recordingStreamRef.current) {
+        recordingStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
+
+
+  const isLight = theme === 'light';
   const isGlobal = !activeChatTarget || activeChatTarget === 'global';
   const targetUser = !isGlobal && typeof activeChatTarget === 'object' ? activeChatTarget : null;
 
   // Filter messages for current chat target (Global vs 1-on-1 Private)
-  const displayedMessages = messages.filter(msg => {
+  const displayedMessages = (messages || []).filter(msg => {
+    if (!msg) return false;
     if (isGlobal) {
       return !msg.recipientId || msg.recipientId === 'global';
-    } else if (targetUser) {
+    } else if (targetUser && currentUser?.id && targetUser?.id) {
       return (
         (msg.senderId === currentUser.id && msg.recipientId === targetUser.id) ||
         (msg.senderId === targetUser.id && msg.recipientId === currentUser.id)
@@ -61,41 +299,39 @@ export default function ChatPanel({
     return true;
   });
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+  };
+
   useEffect(() => {
     scrollToBottom();
   }, [displayedMessages]);
 
-  // Listen for typing indicators from other users
+  // Handle outside click for emoji picker and three dots menu
   useEffect(() => {
-    const unsub = on('typing', ({ userId, userName, timestamp }) => {
-      setTypingUsers(prev => {
-        const existing = prev.filter(t => t.userId !== userId);
-        return [...existing, { userId, userName, timestamp }];
-      });
-    });
-
-    // Clear stale typing indicators
-    const timer = setInterval(() => {
-      setTypingUsers(prev => prev.filter(t => Date.now() - t.timestamp < 3000));
-    }, 1000);
-
-    return () => { unsub(); clearInterval(timer); };
-  }, []);
-
-  // Close emoji picker on outside click
-  useEffect(() => {
-    const handleClick = (e) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+    const handleOutside = (e) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target) &&
+        !emojiButtonRef.current?.contains(e.target)
+      ) {
         setShowEmojiPicker(false);
       }
+      if (
+        moreMenuRef.current &&
+        !moreMenuRef.current.contains(e.target) &&
+        !moreMenuBtnRef.current?.contains(e.target)
+      ) {
+        setShowMoreMenu(false);
+      }
     };
-    if (showEmojiPicker) document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showEmojiPicker]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
-  };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
+  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -108,21 +344,178 @@ export default function ChatPanel({
     }
   };
 
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    return `${(kb / 1024).toFixed(1)} MB`;
+  };
+
+  const handleAudioFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        setSelectedAudio({
+          dataUrl: uploadEvent.target.result,
+          name: file.name,
+          size: formatFileSize(file.size)
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleVideoFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        setSelectedVideo({
+          dataUrl: uploadEvent.target.result,
+          name: file.name,
+          size: formatFileSize(file.size)
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDocumentFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        setSelectedDocument({
+          dataUrl: uploadEvent.target.result,
+          name: file.name,
+          size: formatFileSize(file.size)
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Camera Handler: Mobile opens device camera; Laptop/Desktop opens live webcam preview
+  const handleCameraClick = () => {
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      (typeof window !== 'undefined' && window.innerWidth <= 768 && 'ontouchstart' in window);
+
+    if (isMobileDevice) {
+      mobileCameraInputRef.current?.click();
+    } else {
+      openLaptopWebcam();
+    }
+  };
+
+  const openLaptopWebcam = async () => {
+    setShowLaptopWebcam(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+      });
+      webcamStreamRef.current = stream;
+      if (webcamVideoRef.current) {
+        webcamVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.warn('Could not access laptop webcam, falling back to file picker:', err);
+      setShowLaptopWebcam(false);
+      fileInputRef.current?.click();
+    }
+  };
+
+  const closeLaptopWebcam = () => {
+    if (webcamStreamRef.current) {
+      webcamStreamRef.current.getTracks().forEach(t => t.stop());
+      webcamStreamRef.current = null;
+    }
+    setShowLaptopWebcam(false);
+  };
+
+  const captureLaptopPhoto = () => {
+    const video = webcamVideoRef.current;
+    if (video) {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      setSelectedImage(dataUrl);
+    }
+    closeLaptopWebcam();
+  };
+
+  // Live User Location Sharing with High Accuracy GPS
+  const handleShareLiveLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser or device.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        const mapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+        const accMeters = Math.round(accuracy || 10);
+        onSendMessage({
+          text: `📍 Live Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${accMeters}m)\n${mapsUrl}`,
+          location: {
+            latitude,
+            longitude,
+            accuracy: accMeters,
+            mapsUrl,
+            timestamp: Date.now()
+          }
+        });
+      },
+      (err) => {
+        console.warn('Geolocation error:', err);
+        alert('Could not retrieve live location. Please ensure GPS/location permissions are enabled.');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      }
+    );
+  };
+
   const handleSend = () => {
     const text = inputText.trim();
-    if (!text && !selectedImage) return;
+    if (!text && !selectedImage && !selectedAudio && !selectedVideo && !selectedDocument) return;
 
     if (selectedImage) {
       recordAction('CRUD Operations', 'User attaches and sends media photo', { duration: 0.08, status: 'PASSED', source: 'SecureChat' });
     }
+    if (selectedAudio) {
+      recordAction('CRUD Operations', 'User attaches and sends audio file', { duration: 0.08, status: 'PASSED', source: 'SecureChat' });
+    }
+    if (selectedVideo) {
+      recordAction('CRUD Operations', 'User attaches and sends video file', { duration: 0.08, status: 'PASSED', source: 'SecureChat' });
+    }
+    if (selectedDocument) {
+      recordAction('CRUD Operations', 'User attaches and sends document file', { duration: 0.08, status: 'PASSED', source: 'SecureChat' });
+    }
 
     onSendMessage({
-      text: text || '',
-      imageUrl: selectedImage || null
+      text: text || (selectedAudio ? `🎵 Audio: ${selectedAudio.name}` : selectedVideo ? `🎬 Video: ${selectedVideo.name}` : selectedDocument ? `📄 Document: ${selectedDocument.name}` : ''),
+      imageUrl: selectedImage || null,
+      audioUrl: selectedAudio?.dataUrl || null,
+      audioName: selectedAudio?.name || null,
+      videoUrl: selectedVideo?.dataUrl || null,
+      videoName: selectedVideo?.name || null,
+      documentUrl: selectedDocument?.dataUrl || null,
+      documentName: selectedDocument?.name || null,
+      documentSize: selectedDocument?.size || null
     });
 
     setInputText('');
     setSelectedImage(null);
+    setSelectedAudio(null);
+    setSelectedVideo(null);
+    setSelectedDocument(null);
     setShowEmojiPicker(false);
   };
 
@@ -135,14 +528,12 @@ export default function ChatPanel({
 
   const handleInputChange = (e) => {
     setInputText(e.target.value);
-    // Broadcast typing indicator
     if (currentUser) {
       broadcastTyping(currentUser.id, currentUser.name);
     }
   };
 
   const insertEmoji = (emoji) => {
-    recordAction('CRUD Operations', 'User inserts emoji reaction', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     const input = inputRef.current;
     if (input) {
       const start = input.selectionStart || inputText.length;
@@ -157,54 +548,73 @@ export default function ChatPanel({
     }
   };
 
-  const renderMessageText = (text) => {
-    if (!text) return null;
-    const urls = extractUrls(text);
-    if (urls.length === 0) return <span>{text}</span>;
+  const displayedEmojis = useMemo(() => {
+    if (emojiSearch && emojiSearch.trim()) {
+      const q = emojiSearch.toLowerCase().trim();
+      const matches = new Set();
+      Object.entries(EMOJI_KEYWORD_MAP).forEach(([k, list]) => {
+        if (k.includes(q) || q.includes(k)) {
+          list.forEach(e => matches.add(e));
+        }
+      });
+      EMOJI_CATEGORIES.forEach(c => {
+        if (c.name.toLowerCase().includes(q)) {
+          c.emojis.forEach(e => matches.add(e));
+        }
+      });
+      if (matches.size > 0) return Array.from(matches);
+      return EMOJI_CATEGORIES[activeEmojiCategory]?.emojis || [];
+    }
+    return EMOJI_CATEGORIES[activeEmojiCategory]?.emojis || [];
+  }, [emojiSearch, activeEmojiCategory]);
 
-    let result = [];
+  const renderMessageContent = (text) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+    const matches = text.match(urlRegex);
+
+    if (!matches) {
+      return <span>{text}</span>;
+    }
+
+    const result = [];
     let lastIdx = 0;
 
-    urls.forEach((url, i) => {
-      const urlIdx = text.indexOf(url, lastIdx);
-      const rawIdx = urlIdx >= 0 ? urlIdx : text.indexOf(url.replace('https://', ''), lastIdx);
-      const startIdx = Math.max(0, rawIdx >= 0 ? rawIdx : lastIdx);
-
+    matches.forEach((url, i) => {
+      const startIdx = text.indexOf(url, lastIdx);
       if (startIdx > lastIdx) {
-        result.push(<span key={`t-${i}`}>{text.substring(lastIdx, startIdx)}</span>);
+        result.push(<span key={`text-${i}`}>{text.substring(lastIdx, startIdx)}</span>);
       }
 
       const analysis = analyzeUrl(url);
+      const isDangerous = analysis.riskLevel === 'DANGEROUS';
+      const isSuspicious = analysis.riskLevel === 'SUSPICIOUS';
+
       result.push(
         <button
-          key={`l-${i}`}
-          onClick={() => onOpenLinkModal(analysis)}
-          className="msg-link inline-flex items-center gap-1"
-          title="Click to scan link"
+          key={`link-${i}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onOpenLinkModal) {
+              onOpenLinkModal(analysis);
+            }
+          }}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-medium text-xs underline cursor-pointer transition-colors ${
+            isDangerous
+              ? 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
+              : isSuspicious
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+              : 'text-cyan-400 hover:text-cyan-300'
+          }`}
+          title={`Click to verify: ${analysis.riskLevel} (${analysis.hostname || url})`}
         >
-          {analysis.status === 'dangerous' ? (
-            <ShieldAlert className="w-3.5 h-3.5 text-red-400 inline" />
-          ) : analysis.status === 'suspicious' ? (
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-400 inline" />
-          ) : (
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 inline" />
-          )}
+          {isDangerous && <ShieldAlert className="w-3.5 h-3.5 text-red-400 inline shrink-0" />}
+          {isSuspicious && <ShieldAlert className="w-3.5 h-3.5 text-amber-400 inline shrink-0" />}
           <span>{url}</span>
         </button>
       );
 
-      const urlInText = text.indexOf(url, lastIdx);
-      if (urlInText >= 0) {
-        lastIdx = urlInText + url.length;
-      } else {
-        const rawUrl = url.replace(/^https?:\/\//, '');
-        const rawInText = text.indexOf(rawUrl, lastIdx);
-        if (rawInText >= 0) {
-          lastIdx = rawInText + rawUrl.length;
-        } else {
-          lastIdx = startIdx + url.length;
-        }
-      }
+      lastIdx = startIdx + url.length;
     });
 
     if (lastIdx < text.length) {
@@ -214,674 +624,610 @@ export default function ChatPanel({
     return <>{result}</>;
   };
 
+  // Ticks: 1 tick for sent (offline), 2 gray ticks for delivered (online), 2 orange ticks for read/seen
   const getStatusIcon = (status) => {
     switch (status) {
       case 'read':
-        return (
-          <span className="inline-flex items-center" title="Read / Seen (Blue Double Ticks)">
-            <CheckCheck className="w-4 h-4 blue-tick-glow stroke-[2.5]" />
-          </span>
-        );
+        return <CheckCheck className="w-4 h-4 text-[#f97316] inline ml-1 drop-shadow-[0_0_4px_rgba(249,115,22,0.6)]" title="Seen" />;
       case 'delivered':
-        return (
-          <span className="inline-flex items-center" title="Delivered / Recipient Online (Gray Double Ticks)">
-            <CheckCheck className="w-4 h-4 text-slate-300 stroke-[2.2]" />
-          </span>
-        );
+        return <CheckCheck className="w-4 h-4 text-slate-400 inline ml-1" title="Delivered (Recipient online)" />;
       case 'sent':
       default:
-        return (
-          <span className="inline-flex items-center" title="Sent / Recipient Offline (Single Gray Tick)">
-            <Check className="w-4 h-4 text-slate-400 stroke-[2]" />
-          </span>
-        );
+        return <Check className="w-4 h-4 text-slate-400 inline ml-1" title="Sent (Recipient offline)" />;
     }
   };
 
-  const totalOnline = onlineUsers.length + 1;
-  const q = searchQuery.toLowerCase().trim();
-  const [serverMatchedUsers, setServerMatchedUsers] = useState([]);
-
-  useEffect(() => {
-    if (!q) {
-      setServerMatchedUsers([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const results = await searchUsers(q);
-        if (Array.isArray(results)) {
-          setServerMatchedUsers(results.filter(u => u && u.id !== currentUser?.id));
+  const totalMembers = Math.max(1, (Array.isArray(allUsers) ? allUsers.filter(u => u && u.name && u.name.trim()).length : 0) + (currentUser ? 1 : 0));
+  const totalOnline = useMemo(() => {
+    const onlineSet = new Set((onlineUsers || []).map(u => (typeof u === 'string' ? u : u?.id)));
+    if (currentUser?.id) onlineSet.add(currentUser.id);
+    let count = 0;
+    const allMembers = [...(allUsers || []), ...(currentUser ? [currentUser] : [])];
+    const uniqueIds = new Set();
+    allMembers.forEach(m => {
+      if (m && m.id && m.name && m.name.trim() && !uniqueIds.has(m.id)) {
+        uniqueIds.add(m.id);
+        if (onlineSet.has(m.id) || m.isOnline) {
+          count++;
         }
-      } catch {}
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [q, currentUser?.id]);
+      }
+    });
+    return Math.max(1, count);
+  }, [onlineUsers, allUsers, currentUser]);
 
-  // Combine currentUser and allUsers/onlineUsers plus server results for comprehensive search
-  const baseUsers = currentUser
-    ? [currentUser, ...allUsers.filter(u => u.id !== currentUser.id)]
-    : allUsers;
-
-  const searchMap = new Map();
-  baseUsers.forEach(u => { if (u && u.id) searchMap.set(u.id, u); });
-  serverMatchedUsers.forEach(u => { if (u && u.id) searchMap.set(u.id, { ...searchMap.get(u.id), ...u }); });
-  const usersToSearch = Array.from(searchMap.values());
-
-  // Search matches across all saved/registered users and messages
-  const matchedUsers = q ? usersToSearch.filter(u => {
-    if (!u) return false;
-    const nameStr = (u.name || '').toLowerCase();
-    const usernameStr = (u.username || '').toLowerCase();
-    const cleanUsername = usernameStr.startsWith('@') ? usernameStr.slice(1) : usernameStr;
-    const emailStr = (u.email || '').toLowerCase();
-    const phoneStr = (u.phone || '').toLowerCase();
-    const cleanQuery = q.startsWith('@') ? q.slice(1) : q;
-    return (
-      nameStr.includes(q) ||
-      usernameStr.includes(q) ||
-      cleanUsername.includes(cleanQuery) ||
-      emailStr.includes(q) ||
-      phoneStr.includes(q)
-    );
-  }) : [];
-
-  const matchedMessages = q ? displayedMessages.filter(m => 
-    m.text && m.text.toLowerCase().includes(q)
-  ) : [];
+  // Real-time online presence check
+  const targetIsOnline = Boolean(
+    targetUser && (
+      (Array.isArray(onlineUsers) && onlineUsers.some(u => (typeof u === 'string' ? u === targetUser.id : u?.id === targetUser.id))) ||
+      Boolean(targetUser.isOnline)
+    )
+  );
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[var(--bg-primary)]">
+    <div className={`flex-1 flex flex-col h-full min-w-0 w-full overflow-hidden select-none relative ${
+      isLight ? 'bg-[#f0f2f5]' : 'bg-[#0d161f]'
+    }`}>
 
-      {/* ── Chat Header ── */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-color)] bg-[#0d1622]/90 backdrop-blur-xl">
-        <div className="flex items-center gap-3">
-          {/* Mobile drawer toggle button */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* 1. CHAT HEADER                                               */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <div className={`px-2.5 md:px-4 pt-9 pb-2.5 md:py-3 flex items-center justify-between border-b z-20 shrink-0 relative ${
+        isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
+      }`}>
+        <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+          {/* Back button (Mobile view to return to chats) */}
           <button
             onClick={onToggleMobileSidebar}
-            className="md:hidden p-2 text-cyan-400 hover:bg-cyan-500/10 rounded-xl transition"
-            title="Open Online Users"
+            className="md:hidden p-1.5 text-slate-300 hover:text-white rounded-xl transition"
+            title="Back to Chats"
           >
-            <Users className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
 
           {isGlobal ? (
-            <>
-              <div className="p-2.5 rounded-2xl bg-gradient-to-br from-cyan-500/20 via-purple-500/20 to-pink-500/20 border border-cyan-400/40 shadow-lg shadow-cyan-500/10">
-                <ShieldCheck className="w-6 h-6 text-cyan-400 animate-pulse" />
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#f97316] to-[#fb923c] flex items-center justify-center text-white shadow-sm shrink-0">
+                <Users className="w-5 h-5" />
               </div>
-              <div>
-                <h2 className="text-sm font-extrabold text-white flex items-center gap-1.5">
-                  <span className="gradient-text-rainbow">SecureChat Global Room</span>
-                  <Lock className="w-3.5 h-3.5 text-cyan-400" />
-                </h2>
-                <p className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
-                  <Users className="w-3 h-3 text-purple-400" />
-                  <span className="text-emerald-400 font-bold">{totalOnline}</span> {totalOnline === 1 ? 'user' : 'users'} online
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>SecureChat Community</span>
+                  <Lock className="w-3.5 h-3.5 text-[#f97316]" />
+                </h3>
+                <p className="text-xs text-slate-400 truncate">
+                  {totalMembers} {totalMembers === 1 ? 'member' : 'members'} • {totalOnline} online
                 </p>
               </div>
-            </>
+            </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => onSelectChatTarget('global')}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
-                title="Back to Global Room"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-
-              <div className="relative p-0.5 rounded-full bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 shadow-md">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
                 <img
                   src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                  alt={targetUser?.name}
-                  className="w-9 h-9 rounded-full object-cover border-2 border-[#0d1622]"
+                  alt={targetUser?.name || 'Contact'}
+                  className="w-10 h-10 rounded-full object-cover"
                 />
-                {targetUser?.isOnline || onlineUsers.some(u => u.id === targetUser?.id) ? (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full status-online border-2 border-[var(--bg-secondary)]" />
+                {targetIsOnline ? (
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#22c55e] ring-2 ring-[#0d161d]" />
                 ) : (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 border-2 border-[var(--bg-secondary)]" />
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-slate-500 ring-2 ring-[#0d161d]" />
                 )}
               </div>
-
-              <div>
-                <h2 className="text-sm font-extrabold text-white flex items-center gap-1.5">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-white flex items-center gap-1.5 truncate">
                   <span>{targetUser?.name}</span>
-                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                </h2>
-                <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
-                  <span>Direct Encrypted Chat</span>
-                  {targetUser?.username && <span className="text-purple-300 font-normal">• @{targetUser.username.replace('@', '')}</span>}
+                  <Lock className="w-3.5 h-3.5 text-[#f97316]" />
+                </h3>
+                <p className="text-xs truncate">
+                  {targetIsOnline ? (
+                    <span className="text-[#22c55e] font-medium">● Online</span>
+                  ) : (
+                    <span className="text-slate-400">Offline</span>
+                  )}
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {!isGlobal && (
-            <button
-              onClick={() => onSelectChatTarget('global')}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-cyan-300 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 border border-cyan-400/40 hover:brightness-125 rounded-xl transition mr-1 shadow-sm"
-            >
-              <Users className="w-3.5 h-3.5 text-cyan-400" />
-              Global Chat
-            </button>
-          )}
-
-          {/* Where What Feature Guide Toggle */}
-          <button
-            onClick={() => setShowGuideBanner(prev => !prev)}
-            className={`px-2.5 py-1.5 rounded-xl transition-all border flex items-center gap-1.5 cursor-pointer shadow-sm ${
-              showGuideBanner
-                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold'
-                : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-700'
-            }`}
-            title="Toggle Feature Map & Where What Is Guide"
-          >
-            <HelpCircle className="w-4 h-4 text-cyan-400" />
-            <span className="hidden lg:inline text-xs font-semibold">Where What</span>
-          </button>
-
-          {/* Theme Toggle Button */}
-          {onToggleTheme && (
-            <button
-              onClick={onToggleTheme}
-              className="p-2.5 rounded-xl transition-all border cursor-pointer text-amber-500 dark:text-amber-400 bg-slate-200/80 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700/60 hover:bg-amber-500/10 shadow-sm"
-              title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-            >
-              {theme === 'light' ? (
-                <Moon className="w-4 h-4 text-indigo-600" />
-              ) : (
-                <Sun className="w-4 h-4 text-amber-400" />
-              )}
-            </button>
-          )}
-
-          {/* Search Icon Toggle Button */}
-          <button
-            id="search-toggle-btn"
-            onClick={() => setShowSearchHeader(!showSearchHeader)}
-            className={`p-2.5 rounded-xl transition-all border cursor-pointer ${
-              showSearchHeader
-                ? 'text-cyan-300 bg-cyan-500/20 border-cyan-400/50 shadow-md'
-                : 'text-slate-700 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700/60 hover:bg-slate-300 dark:hover:bg-slate-700/80'
-            }`}
-            title="Search Users & Messages"
-          >
-            <Search className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-          </button>
-
+        {/* Right Header Action Icons: Voice Call, Video Call, Search, Three Dots Menu */}
+        <div className="flex items-center gap-0.5 md:gap-1.5 shrink-0">
           <button
             id="voice-call-btn"
             onClick={() => onOpenVoiceCall && onOpenVoiceCall(targetUser)}
-            className="px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 rounded-xl transition shadow-sm hover:scale-105 flex items-center gap-1.5 cursor-pointer"
+            className="p-1.5 md:p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl transition cursor-pointer"
             title="Voice Call"
           >
-            <Phone className="w-4 h-4" />
-            <span className="hidden lg:inline text-xs font-bold">Voice Call</span>
+            <Phone className="w-4 h-4 md:w-5 md:h-5" />
           </button>
-          <button 
+          <button
             id="video-call-btn"
             onClick={() => onOpenVideoCall && onOpenVideoCall(targetUser)}
-            className="px-2.5 py-1.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-400 rounded-xl transition shadow-sm hover:scale-105 flex items-center gap-1.5 cursor-pointer" 
-            title="HD Video Call"
+            className="p-1.5 md:p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl transition cursor-pointer"
+            title="Video Call"
           >
-            <Video className="w-4 h-4" />
-            <span className="hidden lg:inline text-xs font-bold">Video Call</span>
+            <Video className="w-4 h-4 md:w-5 md:h-5" />
+          </button>
+          <button
+            onClick={() => setShowSearchHeader(!showSearchHeader)}
+            className="p-1.5 md:p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl transition cursor-pointer"
+            title="Search Messages"
+          >
+            <Search className="w-4 h-4 md:w-5 md:h-5" />
+          </button>
+          <button
+            ref={moreMenuBtnRef}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMoreMenu(prev => !prev);
+            }}
+            className="p-1.5 md:p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl transition cursor-pointer"
+            title="More Options"
+          >
+            <MoreVertical className="w-4 h-4 md:w-5 md:h-5" />
           </button>
         </div>
+
+        {/* ── Three Dots Options Dropdown Menu ── */}
+        {showMoreMenu && (
+          <div
+            ref={moreMenuRef}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-full right-3 mt-1 w-56 rounded-2xl bg-[#14202a]/95 border border-slate-700/80 shadow-2xl backdrop-blur-xl p-1.5 z-50 animate-in fade-in zoom-in-95 space-y-1"
+          >
+            {/* Option 1: Chat Theme */}
+            <button
+              onClick={() => {
+                setShowMoreMenu(false);
+                if (onToggleTheme) onToggleTheme();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 transition cursor-pointer text-left"
+            >
+              <Palette className="w-4 h-4 text-[#f97316] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="truncate">Chat Theme</p>
+                <p className="text-[10px] text-slate-400 font-normal">Switch {isLight ? 'Dark' : 'Light'} Mode</p>
+              </div>
+            </button>
+
+            {/* Option 2: Clear Chat */}
+            <button
+              onClick={() => {
+                setShowMoreMenu(false);
+                if (onClearChat) onClearChat(activeChatTarget);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 transition cursor-pointer text-left"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="truncate">Clear Chat</p>
+                <p className="text-[10px] text-rose-400/70 font-normal">Delete messages in chat</p>
+              </div>
+            </button>
+
+            {/* Option 3: Settings */}
+            <button
+              onClick={() => {
+                setShowMoreMenu(false);
+                if (onOpenSettings) onOpenSettings();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 transition cursor-pointer text-left"
+            >
+              <Settings className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="truncate">Settings</p>
+                <p className="text-[10px] text-slate-400 font-normal">Preferences & Security</p>
+              </div>
+            </button>
+
+            {/* Option 4: Encryption Info */}
+            <button
+              onClick={() => {
+                setShowMoreMenu(false);
+                setShowEncryptionInfo(true);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 transition cursor-pointer text-left border-t border-slate-800/60 pt-2"
+            >
+              <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="truncate">Encryption Info</p>
+                <p className="text-[10px] text-teal-400/70 font-normal">End-to-End verified</p>
+              </div>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── Header Slide-Down Search Bar ── */}
+      {/* Search Header Bar (if toggled) */}
       {showSearchHeader && (
-        <div className="px-4 py-3 bg-[var(--bg-secondary)]/95 border-b border-[var(--border-color)] animate-slide-down shadow-lg">
-          <div className="relative flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                id="chat-search-input"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search users or messages..."
-                className="w-full bg-[var(--bg-tertiary)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] text-sm pl-9 pr-8 py-2 rounded-xl border border-[var(--bg-accent)]/30 focus:outline-none"
-                autoFocus
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-0.5 rounded-full"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            <button
-              onClick={() => { setShowSearchHeader(false); setSearchQuery(''); }}
-              className="px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl transition"
-            >
-              Cancel
+        <div className="relative z-30">
+          <div className="px-4 py-2 bg-[#121c25] border-b border-slate-800 flex items-center gap-3">
+            <Search className="w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search in conversation..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-transparent text-sm text-white placeholder:text-slate-400 focus:outline-none"
+              autoFocus
+            />
+            <button onClick={() => { setShowSearchHeader(false); setSearchQuery(''); }} className="p-1 text-slate-400 hover:text-white cursor-pointer">
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Search Dropdown / Live Results */}
-          {q && (
-            <div className="mt-3 max-h-60 overflow-y-auto space-y-3 pt-2 border-t border-[var(--border-color)]">
-              {/* Users matching */}
-              <div>
-                <p className="text-[11px] font-bold text-[var(--bg-accent)] uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5" />
-                  Matching Users ({matchedUsers.length})
-                </p>
-                {matchedUsers.length === 0 ? (
-                  <p className="text-xs text-[var(--text-secondary)] italic pl-2">No user matches found</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {matchedUsers.map(u => {
-                      const isOnline = u.isOnline || onlineUsers.some(o => o.id === u.id);
-                      return (
-                        <div
-                          key={u.id || u.username}
-                          onClick={() => {
-                            if (u.id !== currentUser.id && onSelectChatTarget) {
-                              onSelectChatTarget(u);
-                              setShowSearchHeader(false);
-                              setSearchQuery('');
-                            } else {
-                              setSearchedUserModal(u);
-                            }
-                          }}
-                          className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--bg-tertiary)]/70 hover:bg-[var(--bg-tertiary)] cursor-pointer transition group"
-                        >
-                          <div className="relative shrink-0">
-                            <img
-                              src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                              alt={u.name}
-                              className="w-8 h-8 rounded-full object-cover"
-                            />
-                            {isOnline ? (
-                              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400" />
-                            ) : (
-                              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-slate-500" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--bg-accent)] truncate">{u.name}</p>
-                            <p className="text-[10px] text-emerald-400 truncate">
-                              {u.id === currentUser.id ? 'You' : (isOnline ? 'Online • Click to Chat' : 'Saved • Click to Chat')}
-                            </p>
-                          </div>
-                          {u.id !== currentUser.id && (
-                            <MessageCircle className="w-4 h-4 text-[var(--bg-accent)] opacity-80 group-hover:scale-110 transition" />
-                          )}
-                        </div>
-                      );
-                    })}
+          {/* User matches dropdown */}
+          {searchQuery.trim().length > 0 && Array.isArray(allUsers) && (
+            <div className="absolute top-full left-0 right-0 bg-[#16222f] border-b border-slate-700 max-h-60 overflow-y-auto shadow-2xl">
+              {allUsers.filter(u => u && u.id !== currentUser?.id && (
+                (u.name && u.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (u.username && u.username.toLowerCase().includes(searchQuery.toLowerCase()))
+              )).map(u => (
+                <div
+                  key={u.id}
+                  onClick={() => {
+                    if (onSelectChatTarget) onSelectChatTarget(u);
+                    setShowSearchHeader(false);
+                    setSearchQuery('');
+                  }}
+                  className="px-4 py-2.5 flex items-center gap-3 hover:bg-[#1f2e3d] cursor-pointer border-b border-slate-800/50"
+                >
+                  <img src={u.avatar} alt={u.name} className="w-8 h-8 rounded-full object-cover" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white">{u.name}</h4>
+                    <p className="text-[10px] text-slate-400">{u.username}</p>
                   </div>
-                )}
-              </div>
-
-              {/* Messages matching */}
-              <div>
-                <p className="text-[11px] font-bold text-[var(--bg-accent)] uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Matching Messages ({matchedMessages.length})
-                </p>
-                {matchedMessages.length === 0 ? (
-                  <p className="text-xs text-[var(--text-secondary)] italic pl-2">No message matches found</p>
-                ) : (
-                  <div className="space-y-1">
-                    {matchedMessages.map((m, idx) => (
-                      <div key={m.id || idx} className="p-2 rounded-xl bg-[var(--bg-tertiary)]/50 text-xs">
-                        <div className="flex justify-between items-center text-[10px] text-[var(--text-secondary)] mb-0.5">
-                          <span className="font-semibold text-[var(--bg-accent)]">{m.senderName}</span>
-                          <span>{m.timestamp}</span>
-                        </div>
-                        <p className="text-[var(--text-primary)] line-clamp-2">{m.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {/* User Profile Modal from Header Search */}
-      {searchedUserModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setSearchedUserModal(null)}
-        >
-          <div
-            className="w-80 glass-modal rounded-2xl p-5 border border-[var(--border-color)] shadow-2xl animate-scale-in text-center relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setSearchedUserModal(null)}
-              className="absolute top-3 right-3 p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-full transition"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <img
-              src={searchedUserModal.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-              alt={searchedUserModal.name}
-              className="w-20 h-20 rounded-full object-cover mx-auto ring-4 ring-[var(--bg-accent)]/30 mb-3"
-            />
-            <h3 className="text-lg font-bold text-[var(--text-primary)]">{searchedUserModal.name}</h3>
-            <p className="text-xs text-[var(--bg-accent)] font-medium mb-1">
-              {searchedUserModal.id === currentUser.id ? 'You' : `@${(searchedUserModal.username || 'user').replace('@', '')}`}
-            </p>
-            {searchedUserModal.email && (
-              <p className="text-[11px] text-slate-400 mb-2 truncate">{searchedUserModal.email}</p>
-            )}
-            {searchedUserModal.bio && (
-              <p className="text-xs text-slate-300 italic mb-3 px-2">"{searchedUserModal.bio}"</p>
-            )}
-            
-            {searchedUserModal.isOnline || onlineUsers.some(o => o.id === searchedUserModal.id) || searchedUserModal.id === currentUser.id ? (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-medium mb-4">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Online & Ready to Chat
-              </div>
-            ) : (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800/80 border border-slate-700/60 rounded-full text-xs text-slate-300 font-medium mb-4">
-                <span className="w-2 h-2 rounded-full bg-slate-500" />
-                Saved Contact • Offline
-              </div>
-            )}
-
-            {searchedUserModal.id !== currentUser.id && (
-              <button
-                onClick={() => {
-                  if (onSelectChatTarget) onSelectChatTarget(searchedUserModal);
-                  setSearchedUserModal(null);
-                  setShowSearchHeader(false);
-                  setSearchQuery('');
-                }}
-                className="w-full py-2.5 mb-2 bg-[var(--bg-accent)] hover:bg-[var(--bg-accent-hover)] text-white text-xs font-bold rounded-xl transition shadow-lg flex items-center justify-center gap-2"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Start Private Chat
-              </button>
-            )}
-
-            <button
-              onClick={() => setSearchedUserModal(null)}
-              className="w-full py-2 bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-semibold rounded-xl transition"
-            >
-              Close
-            </button>
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* 2. CHAT MESSAGES BODY                                        */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <div
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-3 relative"
+        style={{
+          backgroundImage: `linear-gradient(rgba(10, 18, 25, 0.88), rgba(10, 18, 25, 0.94)), url('https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1920&q=80')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
+        }}
+      >
+        {/* Floating Glowing Teal E2E Encryption Banner Card */}
+        <div className="max-w-2xl mx-auto my-2 p-3.5 rounded-2xl bg-gradient-to-r from-[#072424]/90 via-[#0a3333]/90 to-[#072424]/90 border border-teal-500/40 flex items-center justify-between gap-3 shadow-2xl backdrop-blur-md">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-teal-500/20 border border-teal-400/50 flex items-center justify-center text-teal-300 shadow-[0_0_15px_rgba(20,184,166,0.35)] shrink-0">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white tracking-tight">This chat is end-to-end encrypted</h4>
+              <p className="text-xs text-teal-200/80">
+                Your messages, files and calls are protected with advanced encryption and AI Fraud Shield.
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => setShowEncryptionInfo(!showEncryptionInfo)}
+            className="p-1.5 text-teal-300 hover:text-white transition shrink-0"
+            title="Encryption details"
+          >
+            <Info className="w-5 h-5" />
+          </button>
         </div>
-      )}
 
-      {/* ── Messages Area ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 chat-bg-pattern">
-        {/* 🗺️ Feature Map & Quick Guide ("Where What Is") */}
-        {showGuideBanner && (
-          <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-br from-slate-900/90 via-[#0e1724]/95 to-slate-900/90 border border-cyan-500/40 shadow-xl animate-slide-down relative">
-            <div className="flex items-center justify-between mb-2.5 border-b border-slate-800 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded-lg bg-cyan-500/20 text-cyan-300">
-                  <Sparkles className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-white">App Navigation & Feature Map ("Where What Is")</h3>
-                  <p className="text-[10px] text-slate-400">Everything at a glance — intuitive guide for everyone</p>
-                </div>
+        {/* Date separator: "Today" pill */}
+        <div className="flex items-center justify-center my-3">
+          <span className="px-3.5 py-1 rounded-full bg-[#18232e]/85 border border-slate-700/50 text-slate-300 text-xs font-semibold shadow-sm backdrop-blur-xs">
+            Today
+          </span>
+        </div>
+
+        {/* ── Community Welcome & Security Guide Card ── */}
+        {isGlobal && displayedMessages.length === 0 && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2.5 max-w-md">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-md">
+                A
               </div>
-              <button
-                onClick={() => {
-                  setShowGuideBanner(false);
-                  try { localStorage.setItem('securechat_guide_dismissed', 'true'); } catch {}
-                }}
-                className="text-[10px] font-bold text-slate-400 hover:text-white px-2 py-0.5 rounded-lg hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer"
-              >
-                <span>Hide Guide</span>
-                <X className="w-3 h-3" />
-              </button>
+              <div className="p-3.5 rounded-2xl bg-[#1b2733]/90 border border-slate-700/60 text-white shadow-lg backdrop-blur-md space-y-1">
+                <p className="text-xs font-bold text-[#f97316]">Admin</p>
+                <p className="text-sm font-medium">Welcome to SecureChat Community!</p>
+                <p className="text-xs text-slate-300">Here we discuss updates, security tips and features.</p>
+                <p className="text-[10px] text-slate-400 text-right">8:45 PM</p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-                <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px] mb-0.5">
-                  <MessageSquare className="w-3 h-3" />
-                  <span>1. Chats & Contacts</span>
-                </div>
-                <p className="text-[10px] text-slate-300 leading-snug">
-                  Use <strong>Global Room</strong> for community or click any contact in the sidebar for private 1-on-1 chat.
-                </p>
+            <div className="flex items-start gap-2.5 max-w-md">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-500 to-red-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-md">
+                <FileText className="w-4 h-4" />
               </div>
-
-              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-                <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px] mb-0.5">
-                  <Shield className="w-3 h-3" />
-                  <span>2. AI Fraud Shield</span>
+              <div className="p-3.5 rounded-2xl bg-[#1b2733]/90 border border-slate-700/60 text-white shadow-lg backdrop-blur-md flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="text-sm font-bold text-white">Security_Guide.pdf</h5>
+                    <p className="text-xs text-slate-400">2.4 MB • PDF</p>
+                  </div>
                 </div>
-                <p className="text-[10px] text-slate-300 leading-snug">
-                  Links sent in chat are auto-scanned. Switch to the <strong>AI Shield</strong> tab to test any URL.
-                </p>
-              </div>
-
-              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-                <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px] mb-0.5">
-                  <Phone className="w-3 h-3" />
-                  <span>3. Voice & Video Calls</span>
-                </div>
-                <p className="text-[10px] text-slate-300 leading-snug">
-                  Click the <strong>Voice Call</strong> or <strong>Video Call</strong> buttons above to start encrypted calls.
-                </p>
-              </div>
-
-              <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-                <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-[11px] mb-0.5">
-                  <Radio className="w-3 h-3" />
-                  <span>4. Stories & Live Sync</span>
-                </div>
-                <p className="text-[10px] text-slate-300 leading-snug">
-                  Post 24h music updates in the <strong>Status</strong> tab. Realtime shared DB syncs Laptop and Mobile.
-                </p>
+                <button
+                  onClick={() => recordAction('CRUD Operations', 'User downloads security guide')}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+                  title="Download File"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Encryption & Tick Legend Banner */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 font-medium">
-            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>
-              {isGlobal 
-                ? 'Global Room • End-to-End Encrypted'
-                : `Encrypted 1-on-1 Chat with ${targetUser?.name}`}
-            </span>
-          </div>
+        {/* ── Real Messages History ── */}
+        {displayedMessages.map((msg) => {
+          const isSender = msg.senderId === currentUser?.id;
+          const isLocationMsg = msg.location || (msg.text && (msg.text.includes('google.com/maps') || msg.text.includes('maps.google.com')));
 
-          {/* Tick Status Legend */}
-          <div className="flex items-center gap-3 px-3 py-1.5 bg-gray-900/80 border border-gray-800 rounded-xl text-[10px] text-gray-300 font-medium shadow-sm">
-            <span className="flex items-center gap-1" title="Sent to offline user">
-              <Check className="w-3 h-3 text-slate-400" /> Sent
-            </span>
-            <span className="flex items-center gap-1" title="Delivered (Recipient is Online)">
-              <CheckCheck className="w-3 h-3 text-slate-300 font-semibold" /> Delivered (Online)
-            </span>
-            <span className="flex items-center gap-1 font-bold text-sky-400" title="Read / Seen by recipient">
-              <CheckCheck className="w-3 h-3 blue-tick-glow" /> Read (Seen)
-            </span>
-          </div>
-        </div>
+          return (
+            <div
+              key={msg.id}
+              className={`flex items-start gap-2.5 ${isSender ? 'justify-end' : 'justify-start'}`}
+            >
+              {!isSender && (
+                <img
+                  src={msg.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                  alt={msg.senderName}
+                  className="w-8 h-8 rounded-full object-cover shrink-0 mt-1"
+                />
+              )}
 
-        <div className="space-y-3.5">
-          {displayedMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/15 via-purple-500/15 to-pink-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3 shadow-lg">
-                <MessageCircle className="w-7 h-7 animate-pulse" />
-              </div>
-              <p className="text-sm font-extrabold text-white">
-                {isGlobal ? 'Welcome to SecureChat Global Room!' : `Start your encrypted chat with ${targetUser?.name}`}
-              </p>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                {isGlobal 
-                  ? 'Say hello to everyone online! Every message and link shared here is protected by the AI Fraud Shield.' 
-                  : 'Messages sent here are end-to-end encrypted directly between your devices.'}
-              </p>
+              <div className={`p-3.5 rounded-2xl max-w-[88%] md:max-w-md shadow-lg backdrop-blur-md space-y-1.5 ${
+                isSender
+                  ? 'border border-[#f97316]/90 bg-[#231710]/95 text-white'
+                  : 'border border-slate-700/60 bg-[#1b2733]/90 text-white'
+              }`}>
+                {/* Sender Name */}
+                <p className="text-xs font-bold text-[#f97316]">
+                  {isSender ? (currentUser?.name?.split(' ')[0] || 'You') : (msg.senderName || 'Contact')}
+                </p>
 
-              {/* Quick Starter Conversation Chips */}
-              <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
-                <button
-                  onClick={() => setInputText('👋 Hello there!')}
-                  className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs text-cyan-300 hover:text-white transition shadow-sm cursor-pointer"
-                >
-                  👋 Hello there!
-                </button>
-                <button
-                  onClick={() => setInputText('🔒 Is this conversation end-to-end encrypted?')}
-                  className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs text-emerald-300 hover:text-white transition shadow-sm cursor-pointer"
-                >
-                  🔒 Encrypted chat?
-                </button>
-                <button
-                  onClick={() => setInputText('☕ Free for a quick voice or video call?')}
-                  className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs text-purple-300 hover:text-white transition shadow-sm cursor-pointer"
-                >
-                  ☕ Free for a call?
-                </button>
-              </div>
-            </div>
-          ) : (
-            displayedMessages.map((msg, idx) => {
-              // System messages (user joined, etc.)
-              if (msg.type === 'system') {
-                return (
-                  <div key={msg.id || idx} className="flex justify-center animate-message">
-                    <span className="text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-500/20 px-3.5 py-1 rounded-full font-medium shadow-sm">
-                      {msg.text}
-                    </span>
+                {/* Media Image if present */}
+                {msg.imageUrl && (
+                  <div className="my-1.5 rounded-xl overflow-hidden cursor-pointer" onClick={() => setPreviewImageModal(msg.imageUrl)}>
+                    <img src={msg.imageUrl} alt="Attached" className="max-h-60 rounded-xl object-cover hover:scale-102 transition" />
                   </div>
-                );
-              }
+                )}
 
-              const isMe = msg.senderId === currentUser?.id;
-              return (
-                <div
-                  key={msg.id || idx}
-                  className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-message`}
-                  style={{ animationDelay: `${Math.min(idx * 0.02, 0.2)}s` }}
-                >
-                  {/* Other user's avatar */}
-                  {!isMe && (
-                    <div className="relative p-0.5 rounded-full bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 mr-2.5 mt-1 shrink-0 shadow-md">
-                      <img
-                        src={msg.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                        alt={msg.senderName}
-                        className="w-8 h-8 rounded-full object-cover border border-[#0d1622]"
-                      />
+                {/* Media Audio player if present */}
+                {msg.audioUrl && (
+                  <div className="my-1.5 p-2 rounded-xl bg-slate-900/90 border border-emerald-500/40 flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs text-emerald-400 font-semibold">
+                      <Headphones className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{msg.audioName || 'Audio Message'}</span>
                     </div>
-                  )}
+                    <audio controls src={msg.audioUrl} className="w-full h-8 rounded" preload="metadata" />
+                  </div>
+                )}
 
-                  <div
-                    className={`relative max-w-[82%] sm:max-w-[72%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-xl transition-all ${
-                      isMe
-                        ? 'bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 text-white rounded-br-xs border border-cyan-300/30 shadow-cyan-950/40'
-                        : 'bg-gradient-to-r from-[#162338] via-[#1a2942] to-[#131d2e] text-slate-100 rounded-bl-xs border border-indigo-500/30 shadow-indigo-950/40'
-                    }`}
-                  >
-                    {/* Sender name for group/private chat */}
-                    {!isMe && msg.senderName && (
-                      <p className="text-[11px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 mb-1 flex items-center gap-1">
-                        <span>{msg.senderName}</span>
+                {/* Media Video player if present */}
+                {msg.videoUrl && (
+                  <div className="my-1.5 rounded-xl overflow-hidden bg-black/70 border border-purple-500/40">
+                    <video
+                      controls
+                      playsInline
+                      src={msg.videoUrl}
+                      className="max-h-64 w-full rounded-xl object-contain bg-black"
+                      preload="metadata"
+                    />
+                  </div>
+                )}
+
+                {/* Media Document card if present */}
+                {msg.documentUrl && (
+                  <div className="my-1.5 p-3 rounded-xl bg-slate-900/90 border border-[#f97316]/40 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-[#f97316]/20 border border-[#f97316]/40 flex items-center justify-center text-[#f97316] shrink-0">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-white truncate">{msg.documentName || 'Document'}</p>
+                        <p className="text-[10px] text-slate-400">{msg.documentSize || 'Document File'}</p>
+                      </div>
+                    </div>
+                    <a
+                      href={msg.documentUrl}
+                      download={msg.documentName || 'document'}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition shrink-0 cursor-pointer"
+                      title="Download Document"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                  </div>
+                )}
+
+                {/* Live Location Card if present */}
+                {isLocationMsg && (
+                  <div className="my-2 p-3 rounded-xl bg-slate-900/95 border border-rose-500/50 shadow-md space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                        </span>
+                        <span className="text-xs font-bold text-rose-400">Live User Location</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        GPS Active
+                      </span>
+                    </div>
+                    {msg.location?.accuracy && (
+                      <p className="text-[11px] text-slate-300">
+                        Accurate to within ±{msg.location.accuracy} meters
                       </p>
                     )}
-
-                    {/* Photo Attachment */}
-                    {msg.imageUrl && (
-                      <div 
-                        className="mb-2 overflow-hidden rounded-xl cursor-pointer transition-transform hover:scale-[1.02]"
-                        onClick={() => setPreviewImageModal(msg.imageUrl)}
-                      >
-                        <img 
-                          src={msg.imageUrl} 
-                          alt="Shared media" 
-                          className="max-h-60 rounded-xl object-cover border border-white/10"
-                        />
-                      </div>
-                    )}
-
-                    {/* Text Message */}
-                    {msg.text && (
-                      <div className="break-words whitespace-pre-wrap">{renderMessageText(msg.text)}</div>
-                    )}
-
-                    <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                      <span className="text-[10px] text-gray-400">{msg.timestamp}</span>
-                      {isMe && getStatusIcon(msg.status)}
-                    </div>
+                    <a
+                      href={msg.location?.mapsUrl || (msg.text.match(/https?:\/\/[^\s]+/)?.[0])}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow transition"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      <span>Open Live Location on Google Maps</span>
+                    </a>
                   </div>
-                </div>
-              );
-            })
-          )}
+                )}
 
-          {/* Typing Indicator */}
-          {typingUsers.length > 0 && (
-            <div className="flex justify-start animate-message">
-              <div className="bg-[var(--msg-in-bg)] px-4 py-3 rounded-2xl rounded-bl-md">
-                <p className="text-[10px] text-[var(--bg-accent)] mb-1 font-medium">
-                  {typingUsers.map(t => t.userName).join(', ')}
-                </p>
-                <div className="flex items-center gap-1.5">
-                  <span className="typing-dot"></span>
-                  <span className="typing-dot"></span>
-                  <span className="typing-dot"></span>
+                {/* Text Message */}
+                {msg.text && (
+                  <div className="text-sm font-normal leading-relaxed break-words">
+                    {renderMessageContent(msg.text)}
+                  </div>
+                )}
+
+                {/* Timestamp & Status with Double Orange Ticks when seen */}
+                <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400 mt-0.5">
+                  <span>{msg.timestamp || 'Just now'}</span>
+                  {isSender && getStatusIcon(msg.status)}
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          );
+        })}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Image Upload Preview */}
+      {/* Image Attachment Preview Box */}
       {selectedImage && (
-        <div className="px-4 py-2 bg-[var(--bg-secondary)] border-t border-[var(--border-color)] flex items-center gap-3">
-          <div className="relative">
-            <img src={selectedImage} alt="Attachment preview" className="w-14 h-14 object-cover rounded-xl border border-emerald-500/40" />
-            <button 
-              onClick={() => setSelectedImage(null)}
-              className="absolute -top-2 -right-2 p-1 bg-red-600 text-white rounded-full hover:bg-red-500 transition"
-            >
-              <X className="w-3 h-3" />
-            </button>
+        <div className="px-4 py-2 bg-[#121c25] border-t border-slate-800 flex items-center justify-between gap-3 z-10">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <img src={selectedImage} alt="Attachment" className="w-14 h-14 object-cover rounded-xl border border-[#f97316]/60" />
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+            <p className="text-xs text-[#f97316] font-medium">Photo ready to send</p>
           </div>
-          <p className="text-xs text-emerald-400 font-medium">Image attached ready to send</p>
         </div>
       )}
 
-      {/* ── Input Area ── */}
-      <div className="px-4 py-3 bg-[var(--bg-secondary)] border-t border-[var(--border-color)] relative">
+      {/* Audio Attachment Preview Box */}
+      {selectedAudio && (
+        <div className="px-4 py-2 bg-[#121c25] border-t border-slate-800 flex items-center justify-between gap-3 z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+              <Headphones className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-white font-medium truncate">{selectedAudio.name}</p>
+              <p className="text-[10px] text-emerald-400">Audio file ready to send</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setSelectedAudio(null)}
+            className="p-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-full transition"
+            title="Remove audio"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
-        {/* Emoji Picker */}
+      {/* Video Attachment Preview Box */}
+      {selectedVideo && (
+        <div className="px-4 py-2 bg-[#121c25] border-t border-slate-800 flex items-center justify-between gap-3 z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+              <Video className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-white font-medium truncate">{selectedVideo.name}</p>
+              <p className="text-[10px] text-purple-400">Video ready to send • {selectedVideo.size}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setSelectedVideo(null)}
+            className="p-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-full transition cursor-pointer"
+            title="Remove video"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Document Attachment Preview Box */}
+      {selectedDocument && (
+        <div className="px-4 py-2 bg-[#121c25] border-t border-slate-800 flex items-center justify-between gap-3 z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-[#f97316]/20 border border-[#f97316]/40 flex items-center justify-center text-[#f97316] shrink-0">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-white font-medium truncate">{selectedDocument.name}</p>
+              <p className="text-[10px] text-[#f97316]">Document ready to send • {selectedDocument.size}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setSelectedDocument(null)}
+            className="p-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-full transition cursor-pointer"
+            title="Remove document"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* 3. MESSAGE INPUT BOX & QUICK ACTION TOOLBAR                  */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <div className="px-2 md:px-4 py-2 bg-[#0d161d] border-t border-slate-800/80 shrink-0 z-20 relative">
+
+        {/* Emoji Picker Modal */}
         {showEmojiPicker && (
           <div
             ref={emojiPickerRef}
-            className="absolute bottom-full left-4 mb-2 w-[340px] max-h-[360px] glass-modal rounded-2xl border border-[var(--border-color)] shadow-2xl animate-slide-up overflow-hidden flex flex-col z-50"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-full left-2 md:left-4 mb-2 w-[calc(100vw-24px)] md:w-[350px] max-w-[350px] max-h-[340px] bg-[#14202a] rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col z-50 animate-in fade-in zoom-in-95"
           >
-            {/* Category tabs */}
-            <div className="flex items-center gap-0.5 px-2 py-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/50 overflow-x-auto shrink-0">
+            {/* Search Input for Unlimited Smilies */}
+            <div className="p-2 border-b border-slate-700/80 bg-[#0d161d] flex items-center gap-2 shrink-0">
+              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={emojiSearch}
+                onChange={(e) => setEmojiSearch(e.target.value)}
+                placeholder="Search unlimited smilies..."
+                className="w-full bg-transparent text-xs text-white placeholder:text-slate-500 focus:outline-none"
+              />
+              {emojiSearch && (
+                <button
+                  type="button"
+                  onClick={() => setEmojiSearch('')}
+                  className="p-0.5 text-slate-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Category Tabs */}
+            <div className="flex items-center gap-1 px-2 py-1.5 border-b border-slate-700/80 bg-[#0d161d]/80 overflow-x-auto shrink-0 scrollbar-none">
               {EMOJI_CATEGORIES.map((cat, i) => (
                 <button
                   key={cat.name}
-                  onClick={() => setActiveEmojiCategory(i)}
-                  className={`px-2.5 py-1.5 text-base rounded-lg transition-all shrink-0 ${
-                    activeEmojiCategory === i
-                      ? 'bg-[var(--bg-accent)]/20 scale-110'
-                      : 'hover:bg-[var(--bg-tertiary)]'
+                  type="button"
+                  onClick={() => {
+                    setActiveEmojiCategory(i);
+                    setEmojiSearch('');
+                  }}
+                  className={`px-2 py-1 text-sm rounded-lg transition shrink-0 ${
+                    activeEmojiCategory === i && !emojiSearch ? 'bg-[#f97316]/20 text-[#f97316] ring-1 ring-[#f97316]/40' : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                   title={cat.name}
                 >
@@ -890,118 +1236,337 @@ export default function ChatPanel({
               ))}
             </div>
 
-            {/* Category label */}
-            <div className="px-3 pt-2 pb-1">
-              <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                {EMOJI_CATEGORIES[activeEmojiCategory]?.name}
-              </p>
-            </div>
-
-            {/* Emoji grid */}
-            <div className="flex-1 overflow-y-auto px-2 pb-2">
-              <div className="grid grid-cols-8 gap-0.5">
-                {EMOJI_CATEGORIES[activeEmojiCategory]?.emojis.map((emoji, i) => (
-                  <button
-                    key={`${emoji}-${i}`}
-                    onClick={() => insertEmoji(emoji)}
-                    className="w-9 h-9 flex items-center justify-center text-xl rounded-lg hover:bg-[var(--bg-tertiary)] transition-all hover:scale-125 active:scale-95"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
+            {/* Emoji Grid */}
+            <div className="flex-1 overflow-y-auto p-2 grid grid-cols-7 md:grid-cols-8 gap-1.5">
+              {displayedEmojis.map((emoji, i) => (
+                <button
+                  key={`${emoji}-${i}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    insertEmoji(emoji);
+                  }}
+                  className="w-9 h-9 md:w-8 md:h-8 flex items-center justify-center text-xl hover:scale-125 transition active:scale-95 cursor-pointer rounded-lg hover:bg-slate-800/80"
+                >
+                  {emoji}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        <div className="flex items-end gap-2">
-          <button
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className={`p-2.5 rounded-xl transition shrink-0 border ${
-              showEmojiPicker
-                ? 'text-cyan-300 bg-cyan-500/20 border-cyan-400/50 shadow-md'
-                : 'text-purple-400 bg-slate-800/60 border-slate-700/60 hover:bg-purple-500/15 hover:border-purple-400/40'
-            }`}
-            title="Emoji"
-          >
-            <Smile className="w-5 h-5" />
-          </button>
-          
-          {/* File Upload Trigger */}
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
-            accept="image/*" 
-            className="hidden" 
-          />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2.5 text-cyan-400 bg-slate-800/60 border border-slate-700/60 hover:bg-cyan-500/15 hover:border-cyan-400/40 rounded-xl transition shrink-0" 
-            title="Attach Photo / File"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
+        {/* Main Input Container: Mobile Responsive with Always-Visible Send Button */}
+        <div className="p-1.5 md:p-2 rounded-2xl bg-[#14202a] border border-slate-700/60 shadow-xl space-y-1.5 w-full min-w-0">
+          {/* Row 1: Emoji, Input/Record Bar, Paperclip, Camera, Mic Record, Circular Orange Send */}
+          <div className="flex items-center gap-1 md:gap-2 w-full min-w-0">
+            <button
+              ref={emojiButtonRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowEmojiPicker(prev => !prev);
+              }}
+              className="p-1.5 md:p-2 text-slate-400 hover:text-[#f97316] transition cursor-pointer shrink-0"
+              title="Emoji"
+            >
+              <Smile className="w-5 h-5" />
+            </button>
 
-          <div className="flex-1 relative">
-            <textarea
-              ref={inputRef}
-              id="message-input"
-              rows={1}
-              value={inputText}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Type encrypted message or paste link to scan for fraud..."
-              className="w-full bg-[#111c29]/90 text-white placeholder:text-slate-500 text-sm px-4 py-2.5 rounded-2xl border border-slate-700/80 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 focus:outline-none resize-none max-h-32 transition-all shadow-inner"
-              style={{ minHeight: '42px' }}
+            {/* Conditional input or live voice recording indicator */}
+            {isRecordingAudio ? (
+              <div className="min-w-0 flex-1 flex items-center justify-between px-3 py-1.5 bg-red-500/15 border border-red-500/40 rounded-xl min-h-[38px]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                  <span className="text-xs font-bold text-red-400 truncate">Recording Audio...</span>
+                  <span className="font-mono text-xs font-bold text-white bg-red-950/90 px-2 py-0.5 rounded-md border border-red-500/40 shrink-0">
+                    {formatRecordTimer(recordingSeconds)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelAudioRecording}
+                  className="p-1 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0 ml-2"
+                  title="Discard Recording"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <input
+                ref={inputRef}
+                id="message-input"
+                type="text"
+                value={inputText}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Type a message..."
+                className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-slate-400 focus:outline-none px-1 md:px-2 py-1.5"
+              />
+            )}
+
+            {/* Hidden File Inputs */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              className="hidden"
             />
+            {/* Mobile Native Camera Input with capture="environment" */}
+            <input
+              type="file"
+              ref={mobileCameraInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+            />
+            {/* Device Audio File Input */}
+            <input
+              type="file"
+              ref={audioFileInputRef}
+              onChange={handleAudioFileChange}
+              accept="audio/*"
+              className="hidden"
+            />
+            {/* Device Document File Input */}
+            <input
+              type="file"
+              ref={documentFileInputRef}
+              onChange={handleDocumentFileChange}
+              accept=".pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.csv,application/pdf,application/msword,text/plain"
+              className="hidden"
+            />
+            {/* Device Video File Input */}
+            <input
+              type="file"
+              ref={videoFileInputRef}
+              onChange={handleVideoFileChange}
+              accept="video/*"
+              className="hidden"
+            />
+
+            {!isRecordingAudio && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 md:p-2 text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+                  title="Attach File"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCameraClick}
+                  className="p-1.5 md:p-2 text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+                  title="Camera"
+                >
+                  <Camera className="w-5 h-5" />
+                </button>
+              </>
+            )}
+
+            {/* Record Icon Beside Camera: Records Audio and sends to other user as recorded audio file */}
+            <button
+              id="mic-record-btn"
+              type="button"
+              onClick={isRecordingAudio ? stopAndSendAudioRecording : startAudioRecording}
+              className={`p-1.5 md:p-2 transition cursor-pointer shrink-0 rounded-xl ${
+                isRecordingAudio
+                  ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/50 ring-2 ring-red-400'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title={isRecordingAudio ? 'Stop and send voice recording' : 'Record Audio Note'}
+            >
+              <Mic className="w-5 h-5" />
+            </button>
+
+            {/* Circular Vibrant Orange Send Button - ALWAYS VISIBLE ON MOBILE with shrink-0 */}
+            <button
+              id="send-btn"
+              type="button"
+              onClick={isRecordingAudio ? stopAndSendAudioRecording : handleSend}
+              disabled={!isRecordingAudio && !inputText.trim() && !selectedImage && !selectedAudio && !selectedVideo && !selectedDocument}
+              className={`shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center text-white shadow-lg transition-transform ${
+                isRecordingAudio || inputText.trim() || selectedImage || selectedAudio || selectedVideo || selectedDocument
+                  ? 'bg-[#f97316] hover:bg-[#ea580c] active:scale-95 cursor-pointer shadow-orange-500/30'
+                  : 'bg-[#f97316]/50 cursor-not-allowed opacity-60'
+              }`}
+              title={isRecordingAudio ? 'Send Voice Recording' : 'Send Message'}
+            >
+              <Send className="w-4 h-4 stroke-[2.5]" />
+            </button>
           </div>
 
-          <button
-            id="send-btn"
-            onClick={handleSend}
-            disabled={!inputText.trim() && !selectedImage}
-            className={`p-2.5 rounded-xl transition-all duration-200 shrink-0 ${
-              inputText.trim() || selectedImage
-                ? 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/30 hover:brightness-110 active:scale-95 font-bold cursor-pointer'
-                : 'bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed'
-            }`}
-            title="Send"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
+          {/* Row 2: Bottom Quick-Action Toolbar: Document, Image, Video, Audio, Location, Contact */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-800/80 scrollbar-none w-full">
+            <button
+              type="button"
+              onClick={() => documentFileInputRef.current?.click()}
+              className="px-3 py-1 rounded-xl bg-[#0a1218] hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+              title="Open Device Documents"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#f97316]" />
+              <span>Document</span>
+            </button>
 
-        {/* Security & Helper hints footer */}
-        <div className="flex items-center justify-between px-2 mt-2 text-[10px] text-slate-400">
-          <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>AI Phishing Guard Active</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden sm:inline">Press <strong className="text-white font-mono">Enter ↵</strong> to send</span>
-            <span className="text-cyan-400 font-medium">256-bit Encrypted</span>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1 rounded-xl bg-[#0a1218] hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+              title="Open Device Photos"
+            >
+              <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+              <span>Image</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => videoFileInputRef.current?.click()}
+              className="px-3 py-1 rounded-xl bg-[#0a1218] hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+              title="Open Device Videos"
+            >
+              <Video className="w-3.5 h-3.5 text-purple-400" />
+              <span>Video</span>
+            </button>
+
+            {/* Audio Option: Opens Device Audio Files */}
+            <button
+              type="button"
+              onClick={() => audioFileInputRef.current?.click()}
+              className="px-3 py-1 rounded-xl bg-[#0a1218] hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <Headphones className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Audio</span>
+            </button>
+
+            {/* Location Option: Sends High-Accuracy Live User Location */}
+            <button
+              type="button"
+              onClick={handleShareLiveLocation}
+              className="px-3 py-1 rounded-xl bg-[#0a1218] hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <MapPin className="w-3.5 h-3.5 text-rose-400" />
+              <span>Location</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const target = targetUser || allUsers[0];
+                if (target) {
+                  onSendMessage({ text: `👤 Contact: ${target.name} (${target.email || target.username})` });
+                }
+              }}
+              className="px-3 py-1 rounded-xl bg-[#0a1218] hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <User className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Contact</span>
+            </button>
           </div>
         </div>
       </div>
 
+      {/* ── Laptop Camera Preview Modal (Desktop) ── */}
+      {showLaptopWebcam && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="relative w-full max-w-lg bg-[#0d161f] border border-orange-500/40 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Camera className="w-4 h-4 text-[#f97316]" />
+                <span>Laptop Camera Preview</span>
+              </div>
+              <button onClick={closeLaptopWebcam} className="p-1.5 text-slate-400 hover:text-white rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="relative rounded-2xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
+              <video
+                ref={webcamVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={closeLaptopWebcam}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={captureLaptopPhoto}
+                className="px-6 py-2.5 rounded-xl bg-[#f97316] hover:bg-[#ea580c] text-white text-xs font-bold shadow-lg shadow-orange-500/30 flex items-center gap-2 transition active:scale-95"
+              >
+                <Camera className="w-4 h-4" />
+                <span>Capture Photo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lightbox Preview Modal */}
       {previewImageModal && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
           onClick={() => setPreviewImageModal(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh]">
-            <img src={previewImageModal} alt="Expanded preview" className="max-w-full max-h-[85vh] rounded-2xl border border-gray-700 shadow-2xl" />
-            <button 
+            <img src={previewImageModal} alt="Expanded preview" className="max-w-full max-h-[85vh] rounded-2xl border border-slate-700 shadow-2xl" />
+            <button
               onClick={() => setPreviewImageModal(null)}
-              className="absolute -top-4 -right-4 p-2 bg-gray-800 text-white rounded-full hover:bg-gray-700"
+              className="absolute -top-4 -right-4 p-2 bg-slate-800 text-white rounded-full hover:bg-slate-700"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
         </div>
       )}
+
+      {/* Encryption Details Modal */}
+      {showEncryptionInfo && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setShowEncryptionInfo(false)}
+        >
+          <div
+            className="w-full max-w-md bg-[#121c25] border border-teal-500/40 rounded-3xl p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">End-to-End Encryption</h3>
+                  <p className="text-xs text-teal-300/80">AES-256-GCM + ECDH Protocol</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEncryptionInfo(false)} className="p-1.5 text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Messages, media files, and calls are encrypted on your device and can only be decrypted by the recipient. Nobody in between, not even SecureChat servers, can read them.
+            </p>
+            <div className="p-3 rounded-xl bg-[#091519] border border-teal-500/20 text-xs font-mono text-teal-400 flex items-center justify-between">
+              <span>Security Code Verified</span>
+              <span>● ACTIVE</span>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

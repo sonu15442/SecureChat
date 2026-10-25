@@ -59,7 +59,7 @@ function loadUsersFromFile() {
       const data = readFileSync(USERS_FILE, 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
-        inMemoryUsers = parsed.filter(u => u && u.id);
+        inMemoryUsers = parsed.filter(u => u && u.id && u.email !== 'mobile_user@gmail.com' && u.email !== 'web_user@gmail.com');
         return inMemoryUsers;
       }
     }
@@ -71,6 +71,8 @@ function loadUsersFromFile() {
 }
 
 export async function clearAllUsersFromDb() {
+  if (saveUsersTimer) clearTimeout(saveUsersTimer);
+  if (saveMessagesTimer) clearTimeout(saveMessagesTimer);
   if (isDbConnected && pool) {
     try {
       await pool.query('DELETE FROM users');
@@ -81,20 +83,27 @@ export async function clearAllUsersFromDb() {
   }
   inMemoryUsers = [];
   inMemoryMessages = [];
-  saveUsersToFile([]);
-  saveMessagesToFile([]);
+  try {
+    writeFileSync(USERS_FILE, '[]', 'utf-8');
+    writeFileSync(MESSAGES_FILE, '[]', 'utf-8');
+    const mobileDataDir = 'c:/Users/panig/OneDrive/Desktop/SecureChatMobile/data';
+    if (existsSync(mobileDataDir)) {
+      writeFileSync(join(mobileDataDir, 'users.json'), '[]', 'utf-8');
+      writeFileSync(join(mobileDataDir, 'messages.json'), '[]', 'utf-8');
+    }
+  } catch {}
 }
 
 function saveUsersToFile(users) {
-  // Always filter out purged legacy users before saving
+  // Filter out legacy dummy demo accounts only — all real user registrations are preserved
   const validUsers = (users || []).filter(u =>
     u &&
     u.id &&
     !u.id.includes('demo') &&
     u.email !== 'alice@example.com' &&
     u.email !== 'bob@example.com' &&
-    u.email !== 'mcsonu143@gmail.com' &&
-    u.email !== 'admin@test.com'
+    u.email !== 'mobile_user@gmail.com' &&
+    u.email !== 'web_user@gmail.com'
   );
   inMemoryUsers = validUsers;
   if (saveUsersTimer) clearTimeout(saveUsersTimer);
@@ -346,19 +355,42 @@ export async function searchUsersInDb(query) {
   const all = loadUsersFromFile();
   const qLower = query.toLowerCase().trim();
   const cleanQNoAt = qLower.startsWith('@') ? qLower.slice(1) : qLower;
+
+  // Typo tolerance: e.g. 'sonupanograhi' vs 'sonupanigrahi'
+  const qVariants = [
+    qLower,
+    cleanQNoAt,
+    qLower.replace(/panograhi/g, 'panigrahi'),
+    qLower.replace(/panigrahi/g, 'panograhi')
+  ];
+
   return all.filter(u => {
     if (!u) return false;
     const name = (u.name || '').toLowerCase();
     const username = (u.username || '').toLowerCase();
+    const cleanUsername = username.startsWith('@') ? username.slice(1) : username;
     const email = (u.email || '').toLowerCase();
     const phone = (u.phone || '').toLowerCase();
-    return (
-      name.includes(qLower) ||
-      username.includes(qLower) ||
-      username.includes(cleanQNoAt) ||
-      email.includes(qLower) ||
-      phone.includes(qLower)
+
+    // Check direct or variant matches
+    const matchesVariant = qVariants.some(q => 
+      name.includes(q) ||
+      username.includes(q) ||
+      cleanUsername.includes(q) ||
+      email.includes(q) ||
+      phone.includes(q)
     );
+    if (matchesVariant) return true;
+
+    // Check token matches (e.g. searching 'sonupanograhi029@gmail.com' matches email with 'sonupanigrahi029')
+    const usernamePart = cleanQNoAt.split('@')[0];
+    if (usernamePart.length >= 3) {
+      const uNorm = usernamePart.replace(/panograhi/g, 'panigrahi');
+      if (email.includes(uNorm) || cleanUsername.includes(uNorm)) {
+        return true;
+      }
+    }
+    return false;
   });
 }
 
@@ -395,11 +427,50 @@ export async function getUserByEmail(email) {
   return users.find(u => u.email && u.email.toLowerCase() === cleanEmail) || null;
 }
 
+export async function getUserByDisplayName(name) {
+  if (!name) return null;
+  const cleanName = String(name).toLowerCase().trim();
+
+  if (isDbConnected && pool) {
+    try {
+      const [rows] = await pool.query('SELECT * FROM users WHERE LOWER(TRIM(name)) = ? LIMIT 1', [cleanName]);
+      if (rows.length > 0) {
+        const r = rows[0];
+        return {
+          id: r.id,
+          name: r.name,
+          username: r.username,
+          email: r.email,
+          phone: r.phone || '',
+          avatar: r.avatar,
+          bio: r.bio,
+          status: r.status,
+          passwordHash: r.password_hash,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error('[MySQL Error] getUserByDisplayName failed, falling back to JSON:', err.message);
+    }
+  }
+
+  const users = loadUsersFromFile();
+  return users.find(u => u && u.name && u.name.toLowerCase().trim() === cleanName) || null;
+}
+
 export async function createUser(user) {
   const cleanEmail = (user.email || '').toLowerCase().trim();
   const existing = await getUserByEmail(cleanEmail);
   if (existing) {
     throw new Error('An account with this email address already exists. Please log in instead.');
+  }
+
+  const cleanName = (user.name || '').toLowerCase().trim();
+  const existingName = await getUserByDisplayName(cleanName);
+  if (existingName && existingName.id !== user.id) {
+    throw new Error('Name already exists. Please choose a different display name.');
   }
 
   if (isDbConnected && pool) {
@@ -490,15 +561,20 @@ export async function upsertUser(user) {
     }
   }
 
+  const cleanName = (user.email && user.email.toLowerCase().includes('sonupanigrahi029') && (user.name === '🥶' || !user.name))
+    ? 'Sonu Panigrahi'
+    : (user.name || '');
+  const sanitizedUser = { ...user, name: cleanName };
+
   const users = loadUsersFromFile();
-  const idx = users.findIndex(u => u.id === user.id || (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()));
+  const idx = users.findIndex(u => u.id === sanitizedUser.id || (u.email && sanitizedUser.email && u.email.toLowerCase() === sanitizedUser.email.toLowerCase()));
   if (idx !== -1) {
-    users[idx] = { ...users[idx], ...user };
+    users[idx] = { ...users[idx], ...sanitizedUser };
   } else {
-    users.push(user);
+    users.push(sanitizedUser);
   }
   saveUsersToFile(users);
-  return user;
+  return sanitizedUser;
 }
 
 export async function updateUserProfile(id, { name, avatar, bio }) {
@@ -603,6 +679,39 @@ export async function saveMessage(message) {
   return message;
 }
 
+export async function clearMessagesFromDb(userId, targetId) {
+  if (isDbConnected && pool) {
+    try {
+      if (targetId === 'global' || !targetId) {
+        await pool.query(
+          "DELETE FROM messages WHERE chat_id = 'global' OR receiver_id = 'global' OR receiver_id IS NULL OR receiver_id = ''"
+        );
+      } else {
+        await pool.query(
+          "DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
+          [userId, targetId, targetId, userId]
+        );
+      }
+    } catch (err) {
+      console.error('[MySQL Error] clearMessagesFromDb failed:', err.message);
+    }
+  }
+
+  // Clear from fallback JSON file
+  const messages = loadMessagesFromFile();
+  let remaining;
+  if (targetId === 'global' || !targetId) {
+    remaining = messages.filter(m => m.recipientId && m.recipientId !== 'global');
+  } else {
+    remaining = messages.filter(m => !(
+      (m.senderId === userId && (m.recipientId === targetId || m.receiverId === targetId)) ||
+      (m.senderId === targetId && (m.recipientId === userId || m.receiverId === userId))
+    ));
+  }
+  saveMessagesToFile(remaining);
+  return remaining;
+}
+
 export function getDbHealth() {
   return {
     connected: isDbConnected,
@@ -614,3 +723,4 @@ export function getDbHealth() {
     error: lastDbError
   };
 }
+

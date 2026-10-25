@@ -3,6 +3,8 @@
  * Manages WhatsApp-style status updates with background songs, text captions, and photos.
  */
 
+import { createMomentApi, getMomentsApi, viewMomentApi, deleteMomentApi } from './api';
+
 const STATUS_STORAGE_KEY = 'securechat_statuses';
 
 // Pre-packaged movie themes and popular song presets with REAL MP3 Audio Streams
@@ -84,29 +86,74 @@ export function getActiveStatuses() {
     // Combine local storage and in-memory statuses, deduplicating by ID
     const combinedMap = new Map();
     [...inMemoryStatuses, ...localAll].forEach(s => {
-      if (s && s.id && (now - s.timestamp) < TWENTY_FOUR_HOURS) {
-        combinedMap.set(s.id, s);
+      if (!s || !s.id) return;
+      const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
+      if (!isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS) {
+        combinedMap.set(s.id, { ...s, timestamp: ts });
       }
     });
 
-    const valid = Array.from(combinedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+    const valid = Array.from(combinedMap.values())
+      .map(s => {
+        if (s && s.userId && Array.isArray(s.views)) {
+          return { ...s, views: s.views.filter(vId => String(vId) !== String(s.userId)) };
+        }
+        return s;
+      })
+      .sort((a, b) => b.timestamp - a.timestamp);
     inMemoryStatuses = valid;
     return valid;
   } catch (err) {
     console.warn('Failed to parse localStorage statuses:', err);
-    return inMemoryStatuses.filter(s => (now - s.timestamp) < TWENTY_FOUR_HOURS);
+    return inMemoryStatuses.filter(s => {
+      const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
+      return !isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS;
+    });
   }
 }
 
 /**
- * Save a new status update safely
+ * Sync statuses from backend server (enables cross-device Moments visibility)
+ */
+export async function syncStatusesFromBackend() {
+  try {
+    const serverMoments = await getMomentsApi();
+    if (Array.isArray(serverMoments)) {
+      const now = Date.now();
+      const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+      const combinedMap = new Map();
+      
+      // Existing local & in-memory
+      getActiveStatuses().forEach(s => combinedMap.set(s.id, s));
+      // Merge server moments
+      serverMoments.forEach(s => {
+        if (!s || !s.id) return;
+        const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
+        if (!isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS) {
+          combinedMap.set(s.id, { ...combinedMap.get(s.id), ...s, timestamp: ts });
+        }
+      });
+
+      const merged = Array.from(combinedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+      inMemoryStatuses = merged;
+      try {
+        localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(merged));
+      } catch {}
+      return merged;
+    }
+  } catch {}
+  return getActiveStatuses();
+}
+
+/**
+ * Save a new status update safely and sync to backend
  */
 export function createStatusUpdate(statusData) {
   const existing = getActiveStatuses();
   const newStatus = {
     id: 'status_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
     timestamp: Date.now(),
-    views: [statusData.userId || 'user_anon'],
+    views: [], // Author is NEVER in viewers list
     ...statusData
   };
   
@@ -118,20 +165,20 @@ export function createStatusUpdate(statusData) {
     localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(inMemoryStatuses));
   } catch (err) {
     console.warn('LocalStorage quota limit reached, in-memory store active:', err);
-    // If LocalStorage quota limit is reached, save existing light statuses without crashing
     try {
       const recentLight = inMemoryStatuses.slice(0, 5);
       localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(recentLight));
-    } catch {
-      // Memory store keeps current session intact with full images and songs!
-    }
+    } catch {}
   }
+
+  // Broadcast & persist to backend server asynchronously so other users can see it instantly
+  createMomentApi(newStatus).catch(() => {});
 
   return newStatus;
 }
 
 /**
- * Mark a status as viewed by current user
+ * Mark a status as viewed by current user (author is excluded)
  */
 export function markStatusAsViewed(statusId, userId) {
   if (!statusId || !userId) return;
@@ -139,7 +186,8 @@ export function markStatusAsViewed(statusId, userId) {
   let modified = false;
 
   const updated = existing.map(item => {
-    if (item.id === statusId && !item.views.includes(userId)) {
+    // Creator should never be added to their own views list
+    if (item.id === statusId && String(item.userId) !== String(userId) && !item.views.includes(userId)) {
       modified = true;
       return { ...item, views: [...item.views, userId] };
     }
@@ -153,6 +201,7 @@ export function markStatusAsViewed(statusId, userId) {
     } catch {
       // Memory store is active
     }
+    viewMomentApi(statusId, userId).catch(() => {});
   }
   return updated;
 }
@@ -178,7 +227,8 @@ export function deleteStatus(statusId) {
     console.warn('Failed to delete status from localStorage:', err);
   }
 
-  return getActiveStatuses();
+  deleteMomentApi(statusId).catch(() => {});
+  return inMemoryStatuses;
 }
 
 /**
@@ -189,18 +239,19 @@ export function groupStatusesByUser(statuses) {
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
   const userMap = {};
 
-  statuses.forEach(s => {
-    // Enforce strict 24-hour expiration window (24h = 86,400,000 ms)
-    if (s && s.timestamp && (now - s.timestamp) < TWENTY_FOUR_HOURS) {
+  (Array.isArray(statuses) ? statuses : []).forEach(s => {
+    if (!s || !s.userId) return;
+    const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
+    if (!isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS) {
       if (!userMap[s.userId]) {
         userMap[s.userId] = {
           userId: s.userId,
-          userName: s.userName,
+          userName: s.userName || 'User',
           userAvatar: s.userAvatar,
           statuses: []
         };
       }
-      userMap[s.userId].statuses.push(s);
+      userMap[s.userId].statuses.push({ ...s, timestamp: ts });
     }
   });
 

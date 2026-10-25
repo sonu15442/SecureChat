@@ -7,11 +7,15 @@ import {
   playEndedChime
 } from '../utils/callAudio';
 import { recordAction } from '../utils/testRecorder';
+import { on } from '../utils/realtimeChannel';
 
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' }
   ]
 };
@@ -21,10 +25,12 @@ export default function VoiceCallModal({
   onClose,
   onSendSignal,
   onEndCall,
-  incomingSignal // latest WebRTC signal for this call
+  incomingSignal, // latest WebRTC signal for this call
+  allUsers
 }) {
   const isCaller = !!call?.isCaller;
-  const targetUser = isCaller ? (call?.recipient || {}) : (call?.caller || {});
+  const rawTarget = isCaller ? (call?.recipient || {}) : (call?.caller || {});
+  const targetUser = (allUsers && Array.isArray(allUsers) ? allUsers.find(u => u.id === rawTarget.id) : null) || rawTarget;
   const [callStatus, setCallStatus] = useState(call?.status || (isCaller ? 'ringing' : 'connected'));
   
   const [isMuted, setIsMuted] = useState(false);
@@ -42,6 +48,9 @@ export default function VoiceCallModal({
   const audioCtxRef = useRef(null);
   const animFrameRef = useRef(null);
   const candidateQueue = useRef([]);
+  const hasSentOfferRef = useRef(false);
+  const pendingOfferRef = useRef(null);
+  const pendingAnswerRef = useRef(null);
 
   // 1. Manage Outgoing Ringback Tone if caller
   useEffect(() => {
@@ -64,6 +73,13 @@ export default function VoiceCallModal({
       setCallStatus(call.status);
     }
   }, [call?.status, callStatus]);
+
+  // Ensure caller automatically creates offer once call transitions to connected
+  useEffect(() => {
+    if (callStatus === 'connected' && isCaller && !hasSentOfferRef.current) {
+      sendOffer();
+    }
+  }, [callStatus, isCaller]);
 
   // 2. Call duration timer when connected
   useEffect(() => {
@@ -118,13 +134,34 @@ export default function VoiceCallModal({
 
         // Remote track received from peer (User 2 or User 1)
         pc.ontrack = (event) => {
-          if (event.streams && event.streams[0]) {
-            remoteStreamRef.current = event.streams[0];
-            if (remoteAudioRef.current) {
-              remoteAudioRef.current.srcObject = event.streams[0];
-              remoteAudioRef.current.play().catch(() => {});
+          const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+          remoteStreamRef.current = stream;
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = stream;
+            remoteAudioRef.current.muted = !isSpeakerOn;
+            remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
+            const playPromise = remoteAudioRef.current.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(e => {
+                console.warn('HTML5 Audio play autoplay blocked, adding resume listeners:', e);
+                const resumeVoice = () => {
+                  if (remoteAudioRef.current) remoteAudioRef.current.play().catch(() => {});
+                  window.removeEventListener('click', resumeVoice);
+                  window.removeEventListener('touchstart', resumeVoice);
+                };
+                window.addEventListener('click', resumeVoice);
+                window.addEventListener('touchstart', resumeVoice);
+              });
             }
           }
+          // Secondary fallback audio object
+          try {
+            const fallbackAudio = new Audio();
+            fallbackAudio.srcObject = stream;
+            fallbackAudio.autoplay = true;
+            fallbackAudio.muted = !isSpeakerOn;
+            fallbackAudio.play().catch(() => {});
+          } catch {}
         };
 
         // Forward ICE candidates to peer
@@ -139,18 +176,20 @@ export default function VoiceCallModal({
           }
         };
 
-        // If Caller and already answered or connected, initiate offer
-        if (isCaller) {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          if (onSendSignal) {
-            onSendSignal({
-              type: 'offer',
-              sdp: offer,
-              callId: call.callId,
-              targetId: targetUser.id
-            });
-          }
+        if (pendingOfferRef.current) {
+          const off = pendingOfferRef.current;
+          pendingOfferRef.current = null;
+          await handleSignal(off);
+        }
+        if (pendingAnswerRef.current) {
+          const ans = pendingAnswerRef.current;
+          pendingAnswerRef.current = null;
+          await handleSignal(ans);
+        }
+
+        // If Caller and already answered or connected, initiate offer once
+        if (isCaller && (call.status === 'connected' || callStatus === 'connected')) {
+          await sendOffer();
         } else {
           // If Callee, process any queued offer or candidates
           processQueuedSignals();
@@ -178,6 +217,33 @@ export default function VoiceCallModal({
     };
   }, []);
 
+  const sendOffer = async () => {
+    if (hasSentOfferRef.current) return;
+    const pc = pcRef.current;
+    if (!pc) {
+      setTimeout(() => {
+        if (!hasSentOfferRef.current) sendOffer();
+      }, 150);
+      return;
+    }
+    try {
+      hasSentOfferRef.current = true;
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
+      await pc.setLocalDescription(offer);
+      if (onSendSignal) {
+        onSendSignal({
+          type: 'offer',
+          sdp: offer,
+          callId: call.callId,
+          targetId: targetUser.id
+        });
+      }
+    } catch (err) {
+      console.warn('Error creating/sending offer:', err);
+      hasSentOfferRef.current = false;
+    }
+  };
+
   // Process any incoming WebRTC signals (offer, answer, ice_candidate)
   const processQueuedSignals = async () => {
     const pc = pcRef.current;
@@ -190,68 +256,71 @@ export default function VoiceCallModal({
     }
   };
 
-  useEffect(() => {
-    if (!incomingSignal || incomingSignal.callId !== call.callId) return;
+  const handleSignal = async (signal) => {
+    if (!signal || signal.callId !== call.callId) return;
     const pc = pcRef.current;
 
-    async function handleSignal() {
-      try {
-        if (incomingSignal.type === 'call_accepted') {
-          setCallStatus('connected');
-          stopOutgoingRingtone();
-          playConnectedChime();
-          // Send offer if caller and not sent yet
-          if (isCaller && pc && !pc.currentRemoteDescription) {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            if (onSendSignal) {
-              onSendSignal({
-                type: 'offer',
-                sdp: offer,
-                callId: call.callId,
-                targetId: targetUser.id
-              });
-            }
-          }
-        } else if (incomingSignal.type === 'offer' && !isCaller) {
-          if (!pc) return;
-          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
-          setCallStatus('connected');
-          stopOutgoingRingtone();
-          playConnectedChime();
-          processQueuedSignals();
-
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          if (onSendSignal) {
-            onSendSignal({
-              type: 'answer',
-              sdp: answer,
-              callId: call.callId,
-              targetId: targetUser.id
-            });
-          }
-        } else if (incomingSignal.type === 'answer' && isCaller) {
-          if (!pc) return;
-          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
-          setCallStatus('connected');
-          stopOutgoingRingtone();
-          playConnectedChime();
-          processQueuedSignals();
-        } else if (incomingSignal.type === 'ice_candidate') {
-          if (pc && pc.remoteDescription) {
-            await pc.addIceCandidate(new RTCIceCandidate(incomingSignal.candidate));
-          } else {
-            candidateQueue.current.push(incomingSignal.candidate);
-          }
+    try {
+      if (signal.type === 'call_accepted') {
+        setCallStatus('connected');
+        stopOutgoingRingtone();
+        playConnectedChime();
+        if (isCaller) {
+          await sendOffer();
         }
-      } catch (err) {
-        console.warn('WebRTC signal processing warning:', err);
-      }
-    }
+      } else if (signal.type === 'offer' && !isCaller) {
+        if (!pc) {
+          pendingOfferRef.current = signal;
+          return;
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        setCallStatus('connected');
+        stopOutgoingRingtone();
+        playConnectedChime();
+        processQueuedSignals();
 
-    handleSignal();
-  }, [incomingSignal, isCaller, call.callId]);
+        const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
+        await pc.setLocalDescription(answer);
+        if (onSendSignal) {
+          onSendSignal({
+            type: 'answer',
+            sdp: answer,
+            callId: call.callId,
+            targetId: targetUser.id
+          });
+        }
+      } else if (signal.type === 'answer' && isCaller) {
+        if (!pc) {
+          pendingAnswerRef.current = signal;
+          return;
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        setCallStatus('connected');
+        stopOutgoingRingtone();
+        playConnectedChime();
+        processQueuedSignals();
+      } else if (signal.type === 'ice_candidate') {
+        if (pc && pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          candidateQueue.current.push(signal.candidate);
+        }
+      }
+    } catch (err) {
+      console.warn('WebRTC signal processing warning:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (incomingSignal) handleSignal(incomingSignal);
+  }, [incomingSignal]);
+
+  useEffect(() => {
+    const unsub = on('call_signal', (sig) => {
+      handleSignal(sig);
+    });
+    return unsub;
+  }, [call.callId]);
 
   // Toggle Mute
   useEffect(() => {
@@ -273,12 +342,15 @@ export default function VoiceCallModal({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const hasEndedRef = useRef(false);
   const handleEndCallAction = () => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
     recordAction('Session Management', 'User terminates voice call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     stopOutgoingRingtone();
     playEndedChime();
-    if (onEndCall) onEndCall(call);
-    onClose();
+    if (onEndCall) onEndCall(call, duration);
+    else if (onClose) onClose();
   };
 
   // Generate 5 sound wave visualizer bars
@@ -292,10 +364,10 @@ export default function VoiceCallModal({
       {/* Hidden HTML5 Audio Element for Remote Voice Output */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
-      <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center justify-between min-h-[520px] border border-emerald-500/30 bg-gradient-to-b from-[#091519] to-[#04080a] shadow-2xl relative overflow-hidden">
+      <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center justify-between min-h-[520px] border border-orange-500/30 bg-gradient-to-b from-[#091519] to-[#04080a] shadow-2xl relative overflow-hidden">
         
         {/* Encrypted Call Badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold relative z-10">
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/30 rounded-full text-xs font-semibold relative z-10">
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>E2E Encrypted Voice Call</span>
         </div>
@@ -305,17 +377,17 @@ export default function VoiceCallModal({
           <div className="relative">
             {/* Audio level pulsing halo */}
             <div
-              className="absolute -inset-4 rounded-full bg-emerald-500/30 blur-xl transition-all duration-100"
+              className="absolute -inset-4 rounded-full bg-orange-500/30 blur-xl transition-all duration-100"
               style={{
                 opacity: isMuted ? 0.1 : 0.3 + activeLevel * 0.7,
                 transform: `scale(${1 + activeLevel * 0.3})`
               }}
             />
             {callStatus === 'ringing' && (
-              <div className="absolute -inset-6 rounded-full border-2 border-emerald-400/40 animate-ping opacity-75" />
+              <div className="absolute -inset-6 rounded-full border-2 border-orange-400/40 animate-ping opacity-75" />
             )}
 
-            <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-emerald-400/50 shadow-2xl relative bg-slate-800">
+            <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-orange-400/50 shadow-2xl relative bg-slate-800">
               <img
                 src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
                 alt={targetUser?.name || 'Contact'}
@@ -338,7 +410,7 @@ export default function VoiceCallModal({
                 <span>Ringing... waiting for user to pick up</span>
               </p>
             ) : (
-              <p className="text-emerald-400 text-sm font-mono font-bold mt-1">
+              <p className="text-orange-400 text-sm font-mono font-bold mt-1">
                 Connected • {formatTimer(duration)}
               </p>
             )}
@@ -362,7 +434,7 @@ export default function VoiceCallModal({
               {barHeights.map((h, i) => (
                 <div
                   key={i}
-                  className="w-2.5 bg-emerald-400 rounded-full transition-all duration-75 shadow-sm shadow-emerald-400/50"
+                  className="w-2.5 bg-orange-400 rounded-full transition-all duration-75 shadow-sm shadow-orange-400/50"
                   style={{ height: `${h}px`, opacity: isMuted ? 0.2 : 0.5 + activeLevel * 0.5 }}
                 />
               ))}
@@ -417,6 +489,15 @@ export default function VoiceCallModal({
             {isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
           </button>
         </div>
+
+        {/* Physical HTML5 Audio Element for incoming WebRTC Voice Stream */}
+        <audio
+          ref={remoteAudioRef}
+          autoPlay
+          playsInline
+          className="hidden"
+          aria-hidden="true"
+        />
 
       </div>
     </div>

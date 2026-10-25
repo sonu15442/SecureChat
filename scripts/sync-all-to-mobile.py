@@ -2,11 +2,18 @@ import os
 
 files_to_sync = [
     'src/components/SettingsPanel.jsx',
+    'src/components/AuthModal.jsx',
     'src/components/ChatPanel.jsx',
     'src/components/VoiceCallModal.jsx',
     'src/components/VideoCallModal.jsx',
     'src/components/StatusModal.jsx',
-    'src/components/StatusViewerModal.jsx'
+    'src/components/StatusViewerModal.jsx',
+    'src/components/Sidebar.jsx',
+    'src/utils/linkDetector.js',
+    'src/utils/api.js',
+    'src/utils/statusManager.js',
+    'src/utils/realtimeChannel.js',
+    'src/App.jsx'
 ]
 
 mobile_base = r'c:\Users\panig\OneDrive\Desktop\SecureChatMobile'
@@ -14,7 +21,7 @@ mobile_base = r'c:\Users\panig\OneDrive\Desktop\SecureChatMobile'
 for rel in files_to_sync:
     src_path = os.path.join(os.path.dirname(__file__), '..', rel)
     dest_path = os.path.join(mobile_base, rel)
-    if os.path.exists(src_path) and os.path.exists(dest_path):
+    if os.path.exists(src_path):
         with open(src_path, 'r', encoding='utf-8') as f:
             content = f.read()
         # Convert source from SecureChat to SecureChatMobile

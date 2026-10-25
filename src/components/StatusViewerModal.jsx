@@ -14,6 +14,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
   const [showViewersList, setShowViewersList] = useState(false);
 
   const timerRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
     if (statusGroup?.statuses) {
@@ -24,27 +25,50 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
   const currentStatus = localStatuses[currentIndex];
   const totalStatuses = localStatuses.length;
 
-  // Resolve viewer profiles (avatars & names)
-  const viewerProfiles = (currentStatus?.views || []).map(userId => {
+  // Resolve viewer profiles (avatars & names) - ONLY other users who viewed this Moment
+  // The creator/author ("who kept their seen") must NOT appear in this list
+  const otherViewerIds = (currentStatus?.views || []).filter(
+    vId => String(vId) !== String(currentStatus?.userId) && String(vId) !== String(currentUserId)
+  );
+
+  const viewerProfiles = otherViewerIds.map(userId => {
     const matched = allUsers.find(u => String(u.id) === String(userId));
     return {
       id: userId,
-      name: matched ? matched.name : (String(userId) === String(currentUserId) ? 'You' : 'User (' + String(userId).slice(0, 6) + ')'),
+      name: matched ? matched.name : ('User (' + String(userId).slice(0, 6) + ')'),
       avatar: matched ? matched.avatar : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'
     };
   });
 
-  // Mark status as viewed when displayed
+  // Mark Moment as viewed when displayed by ANOTHER user (author viewing their own Moment never marks seen)
   useEffect(() => {
-    if (currentStatus && currentUserId) {
+    if (currentStatus && currentUserId && String(currentStatus.userId) !== String(currentUserId)) {
       markStatusAsViewed(currentStatus.id, currentUserId);
-      recordAction('Status Management', 'User views contact audio status story', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
+      recordAction('Moments Management', 'User views contact Moment story', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     }
   }, [currentStatus, currentUserId]);
+
+  // Video playback management (play/pause, volume, mute)
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted;
+      if (isPlaying && !showViewersList) {
+        videoRef.current.play().catch(() => {});
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  }, [isPlaying, isMuted, showViewersList, currentIndex, currentStatus]);
 
   // Audio Playback
   useEffect(() => {
     if (!currentStatus || showViewersList) return;
+
+    const isVideoWithNativeAudio = (currentStatus.type === 'video' || currentStatus.videoUrl) && !currentStatus.songAudioUrl;
+    if (isVideoWithNativeAudio) {
+      stopStatusSong();
+      return;
+    }
 
     const targetAudio = currentStatus.songAudioUrl || currentStatus.songTitle;
     if (targetAudio && isPlaying) {
@@ -60,6 +84,9 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
 
   // Unlock audio on any click/touch anywhere on screen
   const unlockAudioUserGesture = () => {
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
     if (!audioUnlocked && currentStatus && !showViewersList) {
       setAudioUnlocked(true);
       const targetAudio = currentStatus.songAudioUrl || currentStatus.songTitle;
@@ -158,19 +185,32 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
     >
       <div className="w-full max-w-md h-full md:h-[90vh] md:max-h-[850px] relative flex flex-col justify-between overflow-hidden md:rounded-3xl border border-white/10 shadow-2xl">
         
-        {/* Background Visual (Gradient or Photo) */}
+        {/* Background Visual (Gradient, Photo, or Video) */}
         <div 
-          className="absolute inset-0 w-full h-full transition-all duration-500"
+          className="absolute inset-0 w-full h-full transition-all duration-500 bg-black flex items-center justify-center overflow-hidden"
           style={{
             background: currentStatus.type === 'text' ? (currentStatus.bgColor || 'linear-gradient(135deg, #0575E6, #00F260)') : '#000'
           }}
         >
-          {currentStatus.type === 'image' && currentStatus.imageUrl && (
+          {(currentStatus.type === 'video' || currentStatus.videoUrl) ? (
+            <>
+              <video
+                ref={videoRef}
+                src={currentStatus.videoUrl}
+                autoPlay
+                playsInline
+                loop
+                muted={isMuted}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60 pointer-events-none" />
+            </>
+          ) : currentStatus.imageUrl ? (
             <>
               <img src={currentStatus.imageUrl} alt="Status" className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60" />
             </>
-          )}
+          ) : null}
         </div>
 
         {/* Top Header Bar */}
@@ -193,12 +233,14 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
-                src={statusGroup.userAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                src={statusGroup.userAvatar || (allUsers.find(u => u.id === statusGroup.userId)?.avatar) || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
                 alt={statusGroup.userName}
                 className="w-10 h-10 rounded-full object-cover border-2 border-cyan-400"
               />
               <div>
-                <p className="text-sm font-extrabold text-white leading-tight">{statusGroup.userName}</p>
+                <p className="text-sm font-extrabold text-white leading-tight">
+                  {statusGroup.userName || (allUsers.find(u => u.id === statusGroup.userId)?.name) || 'User'}
+                </p>
                 <p className="text-[10px] text-slate-300">
                   {new Date(currentStatus.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
@@ -213,11 +255,11 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
               >
                 {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
               </button>
-              {(currentStatus.songAudioUrl || currentStatus.songTitle) && (
+              {(currentStatus.songAudioUrl || currentStatus.songTitle || currentStatus.videoUrl || currentStatus.type === 'video') && (
                 <button
                   onClick={() => setIsMuted(!isMuted)}
                   className="p-2 text-white hover:bg-white/20 rounded-full transition"
-                  title={isMuted ? 'Unmute Song' : 'Mute Song'}
+                  title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
                 >
                   {isMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-cyan-400" />}
                 </button>
@@ -227,7 +269,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
                   type="button"
                   onClick={handleDeleteCurrentStatus}
                   className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-full transition"
-                  title="Delete This Status"
+                  title="Delete This Moment"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -273,7 +315,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
                     unlockAudioUserGesture();
                     togglePlayPause();
                   }}
-                  className="px-2.5 py-1 bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 text-[11px] font-extrabold rounded-lg shadow-md hover:brightness-110 transition flex items-center gap-1"
+                  className="px-2.5 py-1 bg-gradient-to-r from-orange-400 to-amber-400 text-slate-950 text-[11px] font-extrabold rounded-lg shadow-md hover:brightness-110 transition flex items-center gap-1"
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                   <span>{isPlaying ? 'Sound ON' : 'Play Sound'}</span>
@@ -284,7 +326,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
                     <span className="w-1 bg-cyan-400 rounded-full audio-bar-1" />
                     <span className="w-1 bg-purple-400 rounded-full audio-bar-2" />
                     <span className="w-1 bg-pink-400 rounded-full audio-bar-3" />
-                    <span className="w-1 bg-emerald-400 rounded-full audio-bar-4" />
+                    <span className="w-1 bg-orange-400 rounded-full audio-bar-4" />
                   </div>
                 )}
               </div>
@@ -317,16 +359,20 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
               setShowViewersList(true);
             }}
             className="flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 hover:bg-cyan-500/20 backdrop-blur-md rounded-full border border-cyan-400/40 text-cyan-300 font-extrabold shadow-lg transition-all cursor-pointer hover:scale-105 active:scale-95"
-            title="View status viewers list"
+            title="View Moments Viewer"
           >
             <Eye className="w-4 h-4 text-cyan-400" />
-            <span>Seen by {viewerProfiles.length || 1} {viewerProfiles.length === 1 ? 'user' : 'users'}</span>
+            <span>
+              {viewerProfiles.length === 0
+                ? '0 views'
+                : `Seen by ${viewerProfiles.length} ${viewerProfiles.length === 1 ? 'user' : 'users'}`}
+            </span>
             <ChevronUp className="w-3.5 h-3.5 text-cyan-400" />
           </button>
           <span className="text-[11px] text-slate-400 font-medium">Tap side to skip • Auto 40s</span>
         </div>
 
-        {/* WhatsApp-Style Viewers List Sheet Drawer */}
+        {/* Moments Viewer Sheet Drawer */}
         {showViewersList && (
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -338,8 +384,8 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
                   <UserCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-white">Status Viewers ({viewerProfiles.length})</h3>
-                  <p className="text-[11px] text-slate-400">People who viewed your status story</p>
+                  <h3 className="text-sm font-extrabold text-white">Moments Viewer ({viewerProfiles.length})</h3>
+                  <p className="text-[11px] text-slate-400">People who viewed your Moment</p>
                 </div>
               </div>
               <button
@@ -366,15 +412,16 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
                       />
                       <div>
                         <p className="text-xs font-bold text-white leading-tight">{viewer.name}</p>
-                        <p className="text-[10px] text-emerald-400 font-medium">Viewed Status</p>
+                        <p className="text-[10px] text-orange-400 font-medium">Viewed Moment</p>
                       </div>
                     </div>
                     <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md">Seen</span>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-8 text-slate-400 text-xs">
-                  No views recorded yet
+                <div className="text-center py-10 px-4 text-slate-400 text-xs space-y-1">
+                  <p className="font-semibold text-slate-300">No viewers yet</p>
+                  <p className="text-[11px] text-slate-500">When other users view your Moment, they will appear here.</p>
                 </div>
               )}
             </div>

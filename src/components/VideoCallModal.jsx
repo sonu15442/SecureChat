@@ -7,6 +7,7 @@ import {
   playEndedChime
 } from '../utils/callAudio';
 import { recordAction } from '../utils/testRecorder';
+import { on } from '../utils/realtimeChannel';
 
 const RTC_CONFIG = {
   iceServers: [
@@ -21,10 +22,12 @@ export default function VideoCallModal({
   onClose,
   onSendSignal,
   onEndCall,
-  incomingSignal
+  incomingSignal,
+  allUsers
 }) {
   const isCaller = !!call?.isCaller;
-  const targetUser = isCaller ? (call?.recipient || {}) : (call?.caller || {});
+  const rawTarget = isCaller ? (call?.recipient || {}) : (call?.caller || {});
+  const targetUser = (allUsers && Array.isArray(allUsers) ? allUsers.find(u => u.id === rawTarget.id) : null) || rawTarget;
   const [callStatus, setCallStatus] = useState(call?.status || (isCaller ? 'ringing' : 'connected'));
 
   const [isMuted, setIsMuted] = useState(false);
@@ -36,9 +39,13 @@ export default function VideoCallModal({
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const pcRef = useRef(null);
   const candidateQueue = useRef([]);
+  const hasSentOfferRef = useRef(false);
+  const pendingOfferRef = useRef(null);
+  const pendingAnswerRef = useRef(null);
 
   // 1. Ringing sound if outgoing
   useEffect(() => {
@@ -60,6 +67,13 @@ export default function VideoCallModal({
       setCallStatus(call.status);
     }
   }, [call?.status, callStatus]);
+
+  // Ensure caller automatically creates offer once call transitions to connected
+  useEffect(() => {
+    if (callStatus === 'connected' && isCaller && !hasSentOfferRef.current) {
+      sendOffer();
+    }
+  }, [callStatus, isCaller]);
 
   // 2. Timer
   useEffect(() => {
@@ -95,11 +109,26 @@ export default function VideoCallModal({
 
         // Remote track arrival (audio + video from peer)
         pc.ontrack = (event) => {
-          if (event.streams && event.streams[0]) {
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = event.streams[0];
-              remoteVideoRef.current.play().catch(() => {});
+          const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+          remoteStreamRef.current = stream;
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = stream;
+            remoteVideoRef.current.muted = false;
+            remoteVideoRef.current.volume = 1.0;
+            const p = remoteVideoRef.current.play();
+            if (p !== undefined) p.catch(() => {});
+          }
+          // Direct WebAudio route for audio track playback
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx && event.track.kind === 'audio') {
+              const rCtx = new AudioCtx();
+              if (rCtx.state === 'suspended') rCtx.resume();
+              const rSource = rCtx.createMediaStreamSource(new MediaStream([event.track]));
+              rSource.connect(rCtx.destination);
             }
+          } catch (e) {
+            console.warn('WebAudio video call audio error:', e);
           }
         };
 
@@ -114,17 +143,20 @@ export default function VideoCallModal({
           }
         };
 
-        if (isCaller) {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          if (onSendSignal) {
-            onSendSignal({
-              type: 'offer',
-              sdp: offer,
-              callId: call.callId,
-              targetId: targetUser.id
-            });
-          }
+        if (pendingOfferRef.current) {
+          const off = pendingOfferRef.current;
+          pendingOfferRef.current = null;
+          await handleSignal(off);
+        }
+        if (pendingAnswerRef.current) {
+          const ans = pendingAnswerRef.current;
+          pendingAnswerRef.current = null;
+          await handleSignal(ans);
+        }
+
+        // Initiate offer once peer is connected
+        if (isCaller && (call.status === 'connected' || callStatus === 'connected')) {
+          await sendOffer();
         } else {
           processQueuedSignals();
         }
@@ -150,6 +182,33 @@ export default function VideoCallModal({
     };
   }, []);
 
+  const sendOffer = async () => {
+    if (hasSentOfferRef.current) return;
+    const pc = pcRef.current;
+    if (!pc) {
+      setTimeout(() => {
+        if (!hasSentOfferRef.current) sendOffer();
+      }, 150);
+      return;
+    }
+    try {
+      hasSentOfferRef.current = true;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      if (onSendSignal) {
+        onSendSignal({
+          type: 'offer',
+          sdp: offer,
+          callId: call.callId,
+          targetId: targetUser.id
+        });
+      }
+    } catch (err) {
+      console.warn('Video call error sending offer:', err);
+      hasSentOfferRef.current = false;
+    }
+  };
+
   const processQueuedSignals = async () => {
     const pc = pcRef.current;
     if (!pc) return;
@@ -161,68 +220,71 @@ export default function VideoCallModal({
     }
   };
 
-  // 4. Handle incoming WebRTC signals
-  useEffect(() => {
-    if (!incomingSignal || incomingSignal.callId !== call.callId) return;
+  const handleSignal = async (signal) => {
+    if (!signal || signal.callId !== call.callId) return;
     const pc = pcRef.current;
 
-    async function handleSignal() {
-      try {
-        if (incomingSignal.type === 'call_accepted') {
-          setCallStatus('connected');
-          stopOutgoingRingtone();
-          playConnectedChime();
-          if (isCaller && pc && !pc.currentRemoteDescription) {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            if (onSendSignal) {
-              onSendSignal({
-                type: 'offer',
-                sdp: offer,
-                callId: call.callId,
-                targetId: targetUser.id
-              });
-            }
-          }
-        } else if (incomingSignal.type === 'offer' && !isCaller) {
-          if (!pc) return;
-          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
-          setCallStatus('connected');
-          stopOutgoingRingtone();
-          playConnectedChime();
-          processQueuedSignals();
-
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          if (onSendSignal) {
-            onSendSignal({
-              type: 'answer',
-              sdp: answer,
-              callId: call.callId,
-              targetId: targetUser.id
-            });
-          }
-        } else if (incomingSignal.type === 'answer' && isCaller) {
-          if (!pc) return;
-          await pc.setRemoteDescription(new RTCSessionDescription(incomingSignal.sdp));
-          setCallStatus('connected');
-          stopOutgoingRingtone();
-          playConnectedChime();
-          processQueuedSignals();
-        } else if (incomingSignal.type === 'ice_candidate') {
-          if (pc && pc.remoteDescription) {
-            await pc.addIceCandidate(new RTCIceCandidate(incomingSignal.candidate));
-          } else {
-            candidateQueue.current.push(incomingSignal.candidate);
-          }
+    try {
+      if (signal.type === 'call_accepted') {
+        setCallStatus('connected');
+        stopOutgoingRingtone();
+        playConnectedChime();
+        if (isCaller) {
+          await sendOffer();
         }
-      } catch (err) {
-        console.warn('Video call WebRTC signal error:', err);
-      }
-    }
+      } else if (signal.type === 'offer' && !isCaller) {
+        if (!pc) {
+          pendingOfferRef.current = signal;
+          return;
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        setCallStatus('connected');
+        stopOutgoingRingtone();
+        playConnectedChime();
+        processQueuedSignals();
 
-    handleSignal();
-  }, [incomingSignal, isCaller, call.callId]);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        if (onSendSignal) {
+          onSendSignal({
+            type: 'answer',
+            sdp: answer,
+            callId: call.callId,
+            targetId: targetUser.id
+          });
+        }
+      } else if (signal.type === 'answer' && isCaller) {
+        if (!pc) {
+          pendingAnswerRef.current = signal;
+          return;
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        setCallStatus('connected');
+        stopOutgoingRingtone();
+        playConnectedChime();
+        processQueuedSignals();
+      } else if (signal.type === 'ice_candidate') {
+        if (pc && pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          candidateQueue.current.push(signal.candidate);
+        }
+      }
+    } catch (err) {
+      console.warn('Video call WebRTC signal error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (incomingSignal) handleSignal(incomingSignal);
+  }, [incomingSignal]);
+
+  useEffect(() => {
+    const unsub = on('call_signal', (sig) => {
+      handleSignal(sig);
+    });
+    return unsub;
+  }, [call.callId]);
 
   // Toggle Mute
   useEffect(() => {
@@ -296,23 +358,26 @@ export default function VideoCallModal({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const hasEndedRef = useRef(false);
   const handleEndCallAction = () => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
     recordAction('Session Management', 'User terminates video call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     stopOutgoingRingtone();
     playEndedChime();
-    if (onEndCall) onEndCall(call);
-    onClose();
+    if (onEndCall) onEndCall(call, duration);
+    else if (onClose) onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
-      <div className="w-full max-w-4xl rounded-3xl overflow-hidden border border-emerald-500/30 bg-[#060b0e] shadow-2xl flex flex-col h-[650px] relative">
+      <div className="w-full max-w-4xl rounded-3xl overflow-hidden border border-orange-500/30 bg-[#060b0e] shadow-2xl flex flex-col h-[650px] relative">
         
         {/* Call Header Overlay */}
         <div className="absolute top-0 left-0 right-0 p-5 z-20 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center border-2 border-emerald-500/40">
-              <Video className="w-5 h-5 text-emerald-400" />
+            <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center border-2 border-orange-500/40">
+              <Video className="w-5 h-5 text-orange-400" />
             </div>
             <div>
               <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
@@ -325,14 +390,14 @@ export default function VideoCallModal({
                   <span>Ringing... waiting for user to pick up</span>
                 </p>
               ) : (
-                <p className="text-xs text-emerald-400 font-mono font-bold">
+                <p className="text-xs text-orange-400 font-mono font-bold">
                   Connected • {formatTimer(duration)} • HD
                 </p>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold backdrop-blur-md">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/15 text-orange-400 border border-orange-500/30 rounded-full text-xs font-semibold backdrop-blur-md">
             <ShieldCheck className="w-4 h-4" />
             <span>WhatsApp HD Encrypted</span>
           </div>
@@ -340,20 +405,19 @@ export default function VideoCallModal({
 
         {/* Video Area */}
         <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden">
-          {/* Main Remote Video Element — Plays Remote Video & Voice */}
-          {callStatus === 'connected' ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-          ) : (
+          {/* Main Remote Video Element — Always mounted to receive audio & video tracks */}
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className={`w-full h-full object-cover ${callStatus === 'connected' ? 'block' : 'hidden'}`}
+          />
+          {callStatus !== 'connected' && (
             /* Ringing Screen before callee picks up */
             <div className="flex flex-col items-center justify-center space-y-4 my-auto relative z-10 animate-fade-in">
               <div className="relative">
-                <div className="absolute -inset-6 rounded-full border-2 border-emerald-400/30 animate-ping opacity-75" />
-                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-emerald-400 shadow-2xl relative bg-slate-800">
+                <div className="absolute -inset-6 rounded-full border-2 border-orange-400/30 animate-ping opacity-75" />
+                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-orange-400 shadow-2xl relative bg-slate-800">
                   <img
                     src={targetUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
                     alt={targetUser?.name || 'Contact'}
@@ -367,7 +431,7 @@ export default function VideoCallModal({
 
               <div className="text-center space-y-1">
                 <h3 className="text-2xl font-black text-white">{targetUser?.name || 'Contact'}</h3>
-                <p className="text-sm font-semibold text-emerald-400 animate-pulse">
+                <p className="text-sm font-semibold text-orange-400 animate-pulse">
                   Ringing Video Call...
                 </p>
               </div>
@@ -383,7 +447,7 @@ export default function VideoCallModal({
           )}
 
           {/* Picture-in-Picture Local Video (Self View) */}
-          <div className="absolute bottom-24 right-5 w-40 sm:w-48 aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500/50 shadow-2xl bg-black z-20 group">
+          <div className="absolute bottom-24 right-5 w-40 sm:w-48 aspect-video rounded-2xl overflow-hidden border-2 border-orange-500/50 shadow-2xl bg-black z-20 group">
             <video
               ref={localVideoRef}
               autoPlay

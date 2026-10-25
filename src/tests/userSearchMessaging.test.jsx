@@ -53,7 +53,7 @@ describe('Saved User Search & Profile Messaging Flow', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText(/Search user to chat/i);
+    const searchInput = screen.getByPlaceholderText(/Search by display name or username/i);
 
     // Search by Name
     fireEvent.change(searchInput, { target: { value: 'Charlie' } });
@@ -105,10 +105,10 @@ describe('Saved User Search & Profile Messaging Flow', () => {
     );
 
     // Open header search
-    const searchToggle = screen.getByTitle(/Search Users & Messages/i);
+    const searchToggle = screen.getByTitle(/Search Messages/i);
     fireEvent.click(searchToggle);
 
-    const chatSearchInput = screen.getByPlaceholderText(/Search users or messages/i);
+    const chatSearchInput = screen.getByPlaceholderText(/Search in conversation.../i);
     fireEvent.change(chatSearchInput, { target: { value: 'Charlie' } });
 
     // Matching user item appears in search dropdown
@@ -215,7 +215,7 @@ describe('Saved User Search & Profile Messaging Flow', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText(/Search user to chat/i);
+    const searchInput = screen.getByPlaceholderText(/Search by display name or username/i);
 
     // Search by username @mcsonu143
     fireEvent.change(searchInput, { target: { value: '@mcsonu143' } });

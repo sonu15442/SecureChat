@@ -5,7 +5,7 @@ import {
   Database, RefreshCw, Smartphone, Laptop, Check, AlertCircle, FileSpreadsheet
 } from 'lucide-react';
 import { PRESET_AVATARS } from '../utils/initialData';
-import { checkServerHealth, syncAllOfflineUsersWithBackend } from '../utils/api';
+import { checkServerHealth, syncAllOfflineUsersWithBackend, checkDisplayNameExists } from '../utils/api';
 import { TEST_SUITES, downloadSuiteReport, downloadAllSuiteReports, recordAction } from '../utils/testRecorder';
 
 export default function SettingsPanel({ settings, onUpdateSettings, currentUser, onUpdateUser, onLogout, onClose, canInstallApp, onInstallApp }) {
@@ -13,6 +13,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [editName, setEditName] = useState(currentUser?.name || '');
   const [editBio, setEditBio] = useState(currentUser?.bio || '');
+  const [nameError, setNameError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [customServerInput, setCustomServerInput] = useState(() => {
     try {
@@ -347,9 +348,18 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                     <input
                       type="text"
                       value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
+                      onChange={(e) => {
+                        setEditName(e.target.value);
+                        if (nameError) setNameError('');
+                      }}
                       className="w-full bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-sm px-3.5 py-2.5 rounded-xl border border-transparent focus:border-[var(--bg-accent)]/30 focus:outline-none"
                     />
+                    {nameError && (
+                      <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-semibold animate-fade-in">
+                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>{nameError}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--text-secondary)]">Bio</label>
@@ -361,9 +371,25 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                     />
                   </div>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      const cleanNewName = editName.trim();
+                      if (!cleanNewName) {
+                        setNameError('Display name cannot be empty.');
+                        return;
+                      }
+
+                      // Check if another user already has this display name
+                      if (cleanNewName.toLowerCase() !== (currentUser?.name || '').trim().toLowerCase()) {
+                        const check = await checkDisplayNameExists(cleanNewName, currentUser?.id);
+                        if (check && check.exists) {
+                          setNameError('Name already exists. Please choose a different display name.');
+                          return;
+                        }
+                      }
+
+                      setNameError('');
                       recordAction('Profile Management', 'User updates profile details successfully', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
-                      onUpdateUser({ ...currentUser, name: editName, bio: editBio });
+                      onUpdateUser({ ...currentUser, name: cleanNewName, bio: editBio });
                       setSaveSuccess(true);
                       setTimeout(() => setSaveSuccess(false), 2500);
                     }}
@@ -389,8 +415,8 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                     <Database className="w-4 h-4 text-cyan-400" />
                     Unified Database & Cross-Device Sync
                   </h3>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold text-emerald-400 flex items-center gap-1 shadow-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="px-2.5 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-[10px] font-bold text-orange-400 flex items-center gap-1 shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping" />
                     Same DB Shared
                   </span>
                 </div>
@@ -435,7 +461,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                     </button>
 
                     {healthInfo && (
-                      <span className={`text-[11px] font-semibold flex items-center gap-1 ${healthInfo.ok ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <span className={`text-[11px] font-semibold flex items-center gap-1 ${healthInfo.ok ? 'text-orange-400' : 'text-rose-400'}`}>
                         {healthInfo.ok ? (
                           <>
                             <Check className="w-3.5 h-3.5" />
@@ -498,14 +524,14 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                         setSyncStatusMsg('✨ All users synced successfully to Laptop DB!');
                         setTimeout(() => setSyncStatusMsg(null), 3500);
                       }}
-                      className="px-3.5 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer"
+                      className="px-3.5 py-2 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer"
                     >
                       <Upload className="w-3.5 h-3.5" />
                       <span>Sync to DB Now</span>
                     </button>
                   </div>
                   {syncStatusMsg && (
-                    <p className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl animate-fade-in flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-orange-400 bg-orange-500/10 border border-orange-500/20 p-2 rounded-xl animate-fade-in flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 shrink-0" />
                       <span>{syncStatusMsg}</span>
                     </p>
@@ -519,7 +545,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                 <div className="flex items-center justify-between pb-2 border-b border-[var(--border-color)]">
                   <div>
                     <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                      <FileSpreadsheet className="w-4 h-4 text-orange-400" />
                       Automated Test Suites & Excel Spreadsheets
                     </h3>
                     <p className="text-xs text-[var(--text-secondary)] mt-0.5">
@@ -541,7 +567,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                       }
                     }}
                     disabled={downloadingSuite === 'all'}
-                    className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{downloadingSuite === 'all' ? 'Downloading...' : 'Download All 6 (.xlsx)'}</span>
@@ -549,8 +575,8 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                 </div>
 
                 {reportActionMsg && (
-                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 text-xs font-semibold text-emerald-300 animate-fade-in">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl flex items-center gap-2 text-xs font-semibold text-orange-300 animate-fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-orange-400 shrink-0" />
                     <span>{reportActionMsg}</span>
                   </div>
                 )}
@@ -574,13 +600,13 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                       className="p-3 bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary)]/80 border border-[var(--border-color)] rounded-xl flex items-center justify-between transition-all"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-xs">
-                          <Check className="w-4 h-4 text-emerald-400" />
+                        <div className="w-8 h-8 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 font-bold text-xs">
+                          <Check className="w-4 h-4 text-orange-400" />
                         </div>
                         <div>
                           <p className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-2">
                             <span>{suite.title}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
+                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-orange-500/15 text-orange-400 font-semibold border border-orange-500/30">
                               300 PASSED
                             </span>
                           </p>
@@ -604,7 +630,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                           }
                         }}
                         disabled={downloadingSuite === suite.id}
-                        className="px-3 py-1.5 bg-[var(--bg-primary)] hover:bg-emerald-500/20 text-[var(--text-primary)] hover:text-emerald-300 border border-[var(--border-color)] hover:border-emerald-500/40 font-semibold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        className="px-3 py-1.5 bg-[var(--bg-primary)] hover:bg-orange-500/20 text-[var(--text-primary)] hover:text-orange-300 border border-[var(--border-color)] hover:border-orange-500/40 font-semibold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>{downloadingSuite === suite.id ? 'Saving...' : 'Excel (.xlsx)'}</span>
@@ -615,7 +641,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
 
                 <div className="pt-2 flex items-center justify-between text-xs text-[var(--text-secondary)]">
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-orange-400" />
                     All 6 workbooks strictly follow the 300 test case schema
                   </span>
                   <button
@@ -671,7 +697,7 @@ export default function SettingsPanel({ settings, onUpdateSettings, currentUser,
                     <span className="text-sm text-[var(--text-primary)]">Real-time fraud link detection</span>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-[var(--bg-tertiary)] rounded-xl">
-                    <Lock className="w-4 h-4 text-emerald-400" />
+                    <Lock className="w-4 h-4 text-orange-400" />
                     <span className="text-sm text-[var(--text-primary)]">End-to-end encryption</span>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-[var(--bg-tertiary)] rounded-xl">

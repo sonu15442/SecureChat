@@ -37,6 +37,28 @@ vi.mock('../utils/api', () => ({
       }
     };
   }),
+  checkEmailExists: vi.fn(async (email) => {
+    if (email === 'alex@gmail.com') {
+      return { exists: true, name: 'Alex Rivera', username: '@alex', email };
+    }
+    return { exists: false };
+  }),
+  checkDisplayNameExists: vi.fn(async () => ({ exists: false })),
+  sendPasswordResetOtp: vi.fn(async (email) => {
+    if (email !== 'alex@gmail.com') {
+      throw new Error('No account found with this email.');
+    }
+    return {
+      success: true,
+      message: 'A 6-digit verification code has been sent directly to your Gmail inbox (alex@gmail.com).'
+    };
+  }),
+  verifyOtpAndResetPassword: vi.fn(async (email, otp, newPassword) => {
+    return {
+      success: true,
+      message: 'Password successfully reset! Please sign in with your new password.'
+    };
+  }),
   resetPassword: vi.fn(async (email) => {
     if (!email || !email.trim()) {
       throw new Error('Please enter your registered email address.');
@@ -111,21 +133,38 @@ describe('AuthModal Component with Email + Password Flow', () => {
     });
   });
 
-  it('resets password when Forgot Password is clicked', async () => {
+  it('verifies Gmail address and requests OTP without displaying code in app', async () => {
     render(<AuthModal onLogin={() => {}} />);
 
     // Click Forgot Password?
     fireEvent.click(screen.getByText('Forgot Password?'));
 
-    const emailInput = screen.getByPlaceholderText(/alex@example.com/i);
-    fireEvent.change(emailInput, { target: { value: 'alex@example.com' } });
+    const emailInput = screen.getByPlaceholderText(/yourname@gmail.com/i);
+    
+    // Type email with typo: alex@gmai.com
+    fireEvent.change(emailInput, { target: { value: 'alex@gmai.com' } });
+    expect(await screen.findByText(/Did you mean @gmail.com\?/i)).toBeInTheDocument();
 
-    const submitBtn = screen.getByRole('button', { name: /Generate New Password/i });
-    fireEvent.click(submitBtn);
+    // Fix to valid registered Gmail
+    fireEvent.change(emailInput, { target: { value: 'alex@gmail.com' } });
 
+    // Wait for registered account verification
     await waitFor(() => {
-      expect(screen.getByText('New Password Generated!')).toBeInTheDocument();
-      expect(screen.getByText('newPassword123')).toBeInTheDocument();
+      expect(screen.getByText(/Correct registered Gmail: Alex Rivera/i)).toBeInTheDocument();
     });
+
+    const sendOtpBtn = screen.getByRole('button', { name: /Send OTP to Gmail/i });
+    expect(sendOtpBtn).not.toBeDisabled();
+    fireEvent.click(sendOtpBtn);
+
+    // Wait for OTP Sent notice
+    await waitFor(() => {
+      expect(screen.getByText(/OTP Sent to alex@gmail.com/i)).toBeInTheDocument();
+    });
+
+    // Ensure NO dev OTP code or hint is rendered in the app!
+    expect(screen.queryByText(/Dev OTP/i)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Enter 6-digit OTP/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Paste Code/i })).toBeInTheDocument();
   });
 });
