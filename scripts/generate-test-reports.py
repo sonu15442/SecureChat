@@ -114,7 +114,7 @@ def main():
     for suite_name, filename in suite_reports:
         create_suite_report(suite_name, live_records, filename)
 
-    print(f"Successfully generated 6 separate suite reports in '{output_dir}/' with {len(live_records)} live test cases.")
+    print(f"Successfully generated 6 separate suite reports in '{OUTPUT_DIR}/' with {len(live_records)} live test cases.")
 
 if __name__ == '__main__':
     main()

@@ -785,90 +785,6 @@ export default function Sidebar({
                 </div>
               ) : (
                 <>
-                  {/* Moments Stories Horizontal Bar (Instant Visibility on Web and Mobile) */}
-                  {chatFilter !== 'unread' && (
-                    <div className="pb-2.5 pt-0.5 border-b border-slate-800/80 mb-2">
-                      <div className="flex items-center justify-between px-1 mb-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-[#f97316] animate-pulse" />
-                          <span>Moments</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resumeAudioContext();
-                            if (onOpenStatusModal) onOpenStatusModal();
-                          }}
-                          className="text-[11px] font-bold text-[#f97316] hover:text-[#fb923c] transition flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3 stroke-[3]" />
-                          <span>Add Moment</span>
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-3 overflow-x-auto py-1 px-1 no-scrollbar">
-                        {/* My Moment Item */}
-                        <div
-                          onClick={() => {
-                            resumeAudioContext();
-                            if (myStatusGroup) onOpenStatusViewer(myStatusGroup);
-                            else if (onOpenStatusModal) onOpenStatusModal();
-                          }}
-                          className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
-                        >
-                          <div className="relative">
-                            <div className={`p-0.5 rounded-full transition-transform group-hover:scale-105 ${
-                              myStatusGroup ? 'ring-2 ring-[#f97316] ring-offset-2 ring-offset-[#0d161d]' : ''
-                            }`}>
-                              <img
-                                src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                                alt="Your Moment"
-                                className="w-12 h-12 rounded-full object-cover"
-                              />
-                            </div>
-                            <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-[#f97316] text-white flex items-center justify-center ring-2 ring-[#0d161d]">
-                              <Plus className="w-3 h-3 stroke-[3]" />
-                            </span>
-                          </div>
-                          <span className="text-[11px] font-medium text-slate-300 max-w-[62px] truncate text-center">
-                            {myStatusGroup ? 'My Moment' : 'Your Story'}
-                          </span>
-                        </div>
-
-                        {/* Other Users' Moments */}
-                        {otherStatusGroups.map(group => {
-                          const userObj = allUsers.find(u => u.id === group.userId);
-                          return (
-                            <div
-                              key={group.userId}
-                              onClick={() => {
-                                resumeAudioContext();
-                                if (onOpenStatusViewer) onOpenStatusViewer(group);
-                              }}
-                              className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
-                            >
-                              <div className="relative p-0.5 rounded-full ring-2 ring-[#f97316] ring-offset-2 ring-offset-[#0d161d] transition-transform group-hover:scale-105">
-                                <img
-                                  src={group.userAvatar || userObj?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                                  alt={group.userName}
-                                  className="w-12 h-12 rounded-full object-cover"
-                                />
-                                {group.statuses.some(s => s.songTitle) && (
-                                  <span className="absolute -bottom-1 -right-1 p-0.5 bg-purple-500 text-white rounded-full text-[9px] ring-1 ring-[#0d161d]">
-                                    <Music className="w-2.5 h-2.5" />
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[11px] font-semibold text-white max-w-[66px] truncate text-center">
-                                {group.userName || userObj?.name || 'Contact'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
                   {/* 1. SecureChat Community Room (Image 1 & 2) */}
                   {chatFilter !== 'unread' && (
                     <div
@@ -1302,24 +1218,40 @@ export default function Sidebar({
                 if (myStatusGroup) onOpenStatusViewer(myStatusGroup);
                 else if (onOpenStatusModal) onOpenStatusModal();
               }}
-              className="flex items-center gap-3.5 p-3 rounded-2xl hover:bg-[#15202b] transition cursor-pointer border border-transparent"
+              className="flex items-center justify-between p-3 rounded-2xl hover:bg-[#15202b] transition cursor-pointer border border-transparent group"
             >
-              <div className="relative shrink-0">
-                <img
-                  src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-                  alt="My Moments"
-                  className="w-12 h-12 rounded-full object-cover"
-                />
-                <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-[#f97316] text-white flex items-center justify-center ring-2 ring-[#0d161d]">
-                  <Plus className="w-3 h-3 stroke-[3]" />
-                </span>
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="relative shrink-0">
+                  <img
+                    src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
+                    alt="My Moments"
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                  <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-[#f97316] text-white flex items-center justify-center ring-2 ring-[#0d161d]">
+                    <Plus className="w-3 h-3 stroke-[3]" />
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-white">My Moments</h4>
+                  <p className="text-xs text-slate-400 truncate">
+                    {myStatusGroup ? `${myStatusGroup.statuses.length} Moment${myStatusGroup.statuses.length > 1 ? 's' : ''} • Tap to view` : 'Tap to add Moments update'}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-bold text-white">My Moments</h4>
-                <p className="text-xs text-slate-400">
-                  {myStatusGroup ? `${myStatusGroup.statuses.length} Moments • Tap to view` : 'Tap to add Moments update'}
-                </p>
-              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resumeAudioContext();
+                  if (onOpenStatusModal) onOpenStatusModal();
+                }}
+                className="p-2 rounded-xl bg-[#f97316]/20 hover:bg-[#f97316] text-[#f97316] hover:text-white transition cursor-pointer shrink-0 flex items-center gap-1 text-xs font-semibold"
+                title="Add Moment"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span className="text-[11px] font-bold">Add</span>
+              </button>
             </div>
 
             <p className="text-xs font-bold uppercase text-slate-400 tracking-wider px-1">Recent Moments</p>
@@ -1364,6 +1296,18 @@ export default function Sidebar({
                 ))
               )}
             </div>
+
+            {/* Mobile Floating Action Button (FAB) for Moments Tab */}
+            <button
+              onClick={() => {
+                resumeAudioContext();
+                if (onOpenStatusModal) onOpenStatusModal();
+              }}
+              className="md:hidden fixed bottom-20 right-5 w-14 h-14 rounded-full bg-gradient-to-tr from-[#f97316] to-[#fb923c] text-white shadow-xl flex items-center justify-center active:scale-95 transition-all z-30 ring-4 ring-[#0d161d] cursor-pointer"
+              title="Add Moment"
+            >
+              <Camera className="w-6 h-6" />
+            </button>
           </div>
         )}
 

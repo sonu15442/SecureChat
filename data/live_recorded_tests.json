@@ -1717,5 +1717,14 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-10-25T17:03:17.718Z"
+  },
+  {
+    "id": "test_1792951050587_slmk",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Moments rail tab",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-10-25T17:57:30.587Z"
   }
 ]
