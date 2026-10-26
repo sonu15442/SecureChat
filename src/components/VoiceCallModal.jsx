@@ -3,6 +3,7 @@ import { Mic, MicOff, Volume2, VolumeX, PhoneOff, ShieldCheck, AlertCircle, Phon
 import {
   startOutgoingRingtone,
   stopOutgoingRingtone,
+  stopAllRingtones,
   playConnectedChime,
   playEndedChime
 } from '../utils/callAudio';
@@ -57,10 +58,10 @@ export default function VoiceCallModal({
     if (callStatus === 'ringing' && isCaller) {
       startOutgoingRingtone();
     } else {
-      stopOutgoingRingtone();
+      stopAllRingtones();
     }
     return () => {
-      stopOutgoingRingtone();
+      stopAllRingtones();
     };
   }, [callStatus, isCaller]);
 
@@ -154,14 +155,21 @@ export default function VoiceCallModal({
               });
             }
           }
-          // Secondary fallback audio object
+          // Secondary fallback direct WebAudio route for guaranteed playback
           try {
-            const fallbackAudio = new Audio();
-            fallbackAudio.srcObject = stream;
-            fallbackAudio.autoplay = true;
-            fallbackAudio.muted = !isSpeakerOn;
-            fallbackAudio.play().catch(() => {});
-          } catch {}
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+              const rCtx = new AudioCtx();
+              if (rCtx.state === 'suspended') rCtx.resume();
+              const rSource = rCtx.createMediaStreamSource(stream);
+              const rGain = rCtx.createGain();
+              rGain.gain.value = isSpeakerOn ? 1.0 : 0.0;
+              rSource.connect(rGain);
+              rGain.connect(rCtx.destination);
+            }
+          } catch (e) {
+            console.warn('WebAudio direct playback error:', e);
+          }
         };
 
         // Forward ICE candidates to peer
@@ -209,7 +217,7 @@ export default function VoiceCallModal({
 
     return () => {
       cancelled = true;
-      stopOutgoingRingtone();
+      stopAllRingtones();
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -263,7 +271,7 @@ export default function VoiceCallModal({
     try {
       if (signal.type === 'call_accepted') {
         setCallStatus('connected');
-        stopOutgoingRingtone();
+        stopAllRingtones();
         playConnectedChime();
         if (isCaller) {
           await sendOffer();
@@ -275,7 +283,7 @@ export default function VoiceCallModal({
         }
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         setCallStatus('connected');
-        stopOutgoingRingtone();
+        stopAllRingtones();
         playConnectedChime();
         processQueuedSignals();
 
@@ -296,7 +304,7 @@ export default function VoiceCallModal({
         }
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         setCallStatus('connected');
-        stopOutgoingRingtone();
+        stopAllRingtones();
         playConnectedChime();
         processQueuedSignals();
       } else if (signal.type === 'ice_candidate') {
@@ -347,7 +355,7 @@ export default function VoiceCallModal({
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
     recordAction('Session Management', 'User terminates voice call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
-    stopOutgoingRingtone();
+    stopAllRingtones();
     playEndedChime();
     if (onEndCall) onEndCall(call, duration);
     else if (onClose) onClose();
@@ -361,8 +369,13 @@ export default function VoiceCallModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
-      {/* Hidden HTML5 Audio Element for Remote Voice Output */}
-      <audio ref={remoteAudioRef} autoPlay playsInline />
+      {/* Remote Audio Output Element */}
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        style={{ position: 'fixed', top: '-9000px', left: '-9000px', width: '1px', height: '1px', opacity: 0.01, pointerEvents: 'none' }}
+      />
 
       <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center justify-between min-h-[520px] border border-orange-500/30 bg-gradient-to-b from-[#091519] to-[#04080a] shadow-2xl relative overflow-hidden">
         
@@ -489,15 +502,6 @@ export default function VoiceCallModal({
             {isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
           </button>
         </div>
-
-        {/* Physical HTML5 Audio Element for incoming WebRTC Voice Stream */}
-        <audio
-          ref={remoteAudioRef}
-          autoPlay
-          playsInline
-          className="hidden"
-          aria-hidden="true"
-        />
 
       </div>
     </div>

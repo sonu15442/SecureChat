@@ -1005,10 +1005,11 @@ function loadMomentsFromFile() {
       const active = rawList.filter(m => {
         if (!m || !m.timestamp) return false;
         const ts = typeof m.timestamp === 'number' ? m.timestamp : new Date(m.timestamp).getTime();
-        return !isNaN(ts) && (now - ts) >= 0 && (now - ts) < TWENTY_FOUR_HOURS;
+        // Strictly keep moments for 24 hours (86,400,000 ms) - allow minor device skew
+        return !isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS;
       });
 
-      // Automatically prune and persist if any expired moments were dropped
+      // Automatically prune and persist if any expired moments were dropped (>24 hours)
       if (active.length !== rawList.length) {
         saveMomentsToFile(active);
         console.log(`🧹 [Moments Cleanup] Automatically purged ${rawList.length - active.length} expired moment(s) (>24h).`);
@@ -1145,10 +1146,15 @@ app.post('/api/moments', (req, res) => {
     const newMoment = {
       ...moment,
       id: moment.id || `moment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: moment.timestamp || Date.now(),
+      timestamp: typeof moment.timestamp === 'number' ? moment.timestamp : Date.now(),
       views: Array.isArray(moment.views) ? moment.views.filter(v => v !== moment.userId) : []
     };
-    moments.unshift(newMoment);
+    const existingIndex = moments.findIndex(m => m.id === newMoment.id);
+    if (existingIndex !== -1) {
+      moments[existingIndex] = newMoment;
+    } else {
+      moments.unshift(newMoment);
+    }
     saveMomentsToFile(moments);
     broadcastEvent('moment_created', { moment: newMoment });
     res.status(201).json({ success: true, moment: newMoment });

@@ -32,6 +32,7 @@ function getApiCandidates() {
     candidates.push('http://localhost:3001/api');
     candidates.push('http://127.0.0.1:3001/api');
     // Laptop host IPv4 on local Wi-Fi for direct Mobile connectivity
+    candidates.push('http://10.101.25.35:3001/api');
     candidates.push('http://10.31.154.35:3001/api');
     candidates.push('http://10.223.64.151:3001/api');
     candidates.push('http://10.216.93.35:3001/api');

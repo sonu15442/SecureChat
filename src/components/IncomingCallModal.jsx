@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Phone, PhoneOff, Video, ShieldCheck, Volume2 } from 'lucide-react';
-import { startIncomingRingtone, stopIncomingRingtone } from '../utils/callAudio';
+import { startIncomingRingtone, stopAllRingtones } from '../utils/callAudio';
 
 export default function IncomingCallModal({ call, onAccept, onDecline, allUsers }) {
   const isVideo = call?.type === 'video';
@@ -11,17 +11,17 @@ export default function IncomingCallModal({ call, onAccept, onDecline, allUsers 
   useEffect(() => {
     startIncomingRingtone();
     return () => {
-      stopIncomingRingtone();
+      stopAllRingtones();
     };
   }, []);
 
   const handleAccept = () => {
-    stopIncomingRingtone();
+    stopAllRingtones();
     onAccept();
   };
 
   const handleDecline = () => {
-    stopIncomingRingtone();
+    stopAllRingtones();
     onDecline();
   };
 

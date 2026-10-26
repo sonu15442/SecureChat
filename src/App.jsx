@@ -19,9 +19,11 @@ import {
   broadcastReadReceipt,
   broadcastUserUpdated,
   broadcastCallSignal,
+  emitCallSignal,
   broadcastMessageClear,
   on
 } from './utils/realtimeChannel';
+import { stopAllRingtones } from './utils/callAudio';
 import {
   fetchAllUsers,
   fetchStoredMessages,
@@ -468,6 +470,7 @@ function App() {
           setOnlineUsers(event.payload.onlineUserIds);
         }
       } else if (event.type === 'call_signal' && event.payload) {
+        emitCallSignal(event.payload);
         if (handleIncomingCallSignalRef.current) {
           handleIncomingCallSignalRef.current(event.payload);
         }
@@ -795,11 +798,12 @@ function App() {
     if (!signal || !currentUser) return;
 
     if (signal.type === 'call_invite') {
-      if (signal.recipientId === currentUser.id) {
+      if (String(signal.recipientId) === String(currentUser.id)) {
         setIncomingCall(signal);
       }
     } else if (signal.type === 'call_cancel') {
-      if (signal.recipientId === currentUser.id) {
+      if (String(signal.recipientId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+        stopAllRingtones();
         const caller = incomingCallRef.current?.caller || signal.caller;
         if (caller) {
           logCallRecord({
@@ -813,7 +817,8 @@ function App() {
         setIncomingCall(null);
       }
     } else if (signal.type === 'call_reject') {
-      if (signal.recipientId === currentUser.id) {
+      if (String(signal.recipientId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+        stopAllRingtones();
         const recipient = activeCallRef.current?.recipient;
         if (recipient) {
           logCallRecord({
@@ -828,13 +833,15 @@ function App() {
         setIncomingCall(null);
       }
     } else if (signal.type === 'call_accepted') {
-      if (signal.recipientId === currentUser.id || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+      if (String(signal.recipientId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+        stopAllRingtones();
         callConnectTimeRef.current = Date.now();
         setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
         setLatestIncomingSignal(signal);
       }
     } else if (signal.type === 'call_end') {
-      if (signal.recipientId === currentUser.id || signal.targetId === currentUser.id || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+      stopAllRingtones();
+      if (String(signal.recipientId) === String(currentUser.id) || String(signal.targetId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
         if (activeCallRef.current) {
           const dur = callConnectTimeRef.current ? Math.floor((Date.now() - callConnectTimeRef.current) / 1000) : 0;
           const target = activeCallRef.current.isCaller ? activeCallRef.current.recipient : activeCallRef.current.caller;
@@ -853,7 +860,7 @@ function App() {
         callConnectTimeRef.current = null;
       }
     } else if (signal.type === 'offer' || signal.type === 'answer' || signal.type === 'ice_candidate') {
-      if (signal.targetId === currentUser.id || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+      if (String(signal.targetId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
         setLatestIncomingSignal(signal);
       }
     }
@@ -915,6 +922,7 @@ function App() {
   const handleAcceptIncomingCall = useCallback(() => {
     if (!incomingCall || !currentUser) return;
 
+    stopAllRingtones();
     recordAction('Session Management', 'User accepts incoming call', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     callConnectTimeRef.current = Date.now();
 
@@ -944,6 +952,7 @@ function App() {
   const handleDeclineIncomingCall = useCallback(() => {
     if (!incomingCall) return;
 
+    stopAllRingtones();
     recordAction('Session Management', 'User declines incoming call', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
 
     logCallRecord({
@@ -968,6 +977,7 @@ function App() {
 
   const handleEndActiveCall = useCallback((currentCall, passedDuration) => {
     if (!currentCall || !currentUser) return;
+    stopAllRingtones();
     recordAction('Session Management', 'User hangs up call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     const targetId = currentCall.isCaller ? currentCall.recipient?.id : currentCall.caller?.id;
     const target = currentCall.isCaller ? currentCall.recipient : currentCall.caller;

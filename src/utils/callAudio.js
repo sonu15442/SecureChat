@@ -5,16 +5,30 @@
 let audioCtx = null;
 let outgoingInterval = null;
 let incomingInterval = null;
-let activeOscillators = [];
+let outgoingOscillators = [];
+let incomingOscillators = [];
+let masterOutgoingGain = null;
+let masterIncomingGain = null;
 
 function getAudioContext() {
   if (!audioCtx || audioCtx.state === 'closed') {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      audioCtx = new AudioCtx();
+    }
   }
-  if (audioCtx.state === 'suspended') {
+  if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume().catch(() => {});
   }
   return audioCtx;
+}
+
+/**
+ * Stop any and all active ringtones instantly with zero delay
+ */
+export function stopAllRingtones() {
+  stopOutgoingRingtone();
+  stopIncomingRingtone();
 }
 
 /**
@@ -25,38 +39,42 @@ export function startOutgoingRingtone() {
   stopOutgoingRingtone();
   stopIncomingRingtone();
 
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  masterOutgoingGain = ctx.createGain();
+  masterOutgoingGain.gain.setValueAtTime(1.0, ctx.currentTime);
+  masterOutgoingGain.connect(ctx.destination);
+
   const playToneBurst = () => {
     try {
-      const ctx = getAudioContext();
+      if (!masterOutgoingGain) return;
       const now = ctx.currentTime;
 
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
-      const gainNode = ctx.createGain();
+      const burstGain = ctx.createGain();
 
       osc1.type = 'sine';
       osc2.type = 'sine';
-      osc1.frequency.setValueAtTime(440, now); // Standard US/UK ringback frequencies
+      osc1.frequency.setValueAtTime(440, now);
       osc2.frequency.setValueAtTime(480, now);
 
-      gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(0.08, now + 0.05);
-      gainNode.gain.setValueAtTime(0.08, now + 1.2);
-      gainNode.gain.linearRampToValueAtTime(0, now + 1.3);
+      burstGain.gain.setValueAtTime(0, now);
+      burstGain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+      burstGain.gain.setValueAtTime(0.08, now + 1.2);
+      burstGain.gain.linearRampToValueAtTime(0, now + 1.3);
 
-      osc1.connect(gainNode);
-      osc2.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      osc1.connect(burstGain);
+      osc2.connect(burstGain);
+      burstGain.connect(masterOutgoingGain);
 
       osc1.start(now);
       osc2.start(now);
       osc1.stop(now + 1.35);
       osc2.stop(now + 1.35);
 
-      activeOscillators.push(osc1, osc2);
-      setTimeout(() => {
-        activeOscillators = activeOscillators.filter(o => o !== osc1 && o !== osc2);
-      }, 1400);
+      outgoingOscillators.push(osc1, osc2);
     } catch {}
   };
 
@@ -69,10 +87,17 @@ export function stopOutgoingRingtone() {
     clearInterval(outgoingInterval);
     outgoingInterval = null;
   }
-  activeOscillators.forEach(osc => {
+  if (masterOutgoingGain && audioCtx) {
+    try {
+      masterOutgoingGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      masterOutgoingGain.disconnect();
+    } catch {}
+    masterOutgoingGain = null;
+  }
+  outgoingOscillators.forEach(osc => {
     try { osc.stop(); } catch {}
   });
-  activeOscillators = [];
+  outgoingOscillators = [];
 }
 
 /**
@@ -83,13 +108,19 @@ export function startIncomingRingtone() {
   stopOutgoingRingtone();
   stopIncomingRingtone();
 
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  masterIncomingGain = ctx.createGain();
+  masterIncomingGain.gain.setValueAtTime(1.0, ctx.currentTime);
+  masterIncomingGain.connect(ctx.destination);
+
   const playMelody = () => {
     try {
-      const ctx = getAudioContext();
+      if (!masterIncomingGain) return;
       const now = ctx.currentTime;
 
-      // WhatsApp / iPhone style musical ringtone sequence:
-      // Notes: E5 (659Hz), G#5 (830Hz), B5 (987Hz), E6 (1318Hz), B5 (987Hz), G#5 (830Hz)
+      // WhatsApp / iPhone style musical ringtone sequence
       const notes = [
         { freq: 659.25, time: 0.00, dur: 0.18 },
         { freq: 830.61, time: 0.20, dur: 0.18 },
@@ -101,28 +132,23 @@ export function startIncomingRingtone() {
 
       notes.forEach(({ freq, time, dur }) => {
         const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        const noteGain = ctx.createGain();
 
-        // Pleasant bell/marimba tone shape
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, now + time);
 
-        gain.gain.setValueAtTime(0.001, now + time);
-        gain.gain.linearRampToValueAtTime(0.22, now + time + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
+        noteGain.gain.setValueAtTime(0.001, now + time);
+        noteGain.gain.linearRampToValueAtTime(0.22, now + time + 0.03);
+        noteGain.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
 
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+        osc.connect(noteGain);
+        noteGain.connect(masterIncomingGain);
 
         osc.start(now + time);
         osc.stop(now + time + dur + 0.05);
 
-        activeOscillators.push(osc);
+        incomingOscillators.push(osc);
       });
-
-      setTimeout(() => {
-        activeOscillators = [];
-      }, 1600);
     } catch {}
   };
 
@@ -135,60 +161,74 @@ export function stopIncomingRingtone() {
     clearInterval(incomingInterval);
     incomingInterval = null;
   }
-  activeOscillators.forEach(osc => {
+  if (masterIncomingGain && audioCtx) {
+    try {
+      masterIncomingGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      masterIncomingGain.disconnect();
+    } catch {}
+    masterIncomingGain = null;
+  }
+  incomingOscillators.forEach(osc => {
     try { osc.stop(); } catch {}
   });
-  activeOscillators = [];
+  incomingOscillators = [];
 }
 
 /**
  * Play brief Call Connected chime
  */
 export function playConnectedChime() {
+  stopAllRingtones();
   try {
     const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    const chimeNotes = [523.25, 659.25, 783.99]; // C5, E5, G5
+    chimeNotes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(523.25, now); // C5
-    osc.frequency.setValueAtTime(659.25, now + 0.12); // E5
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.1);
 
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      gain.gain.setValueAtTime(0, now + idx * 0.1);
+      gain.gain.linearRampToValueAtTime(0.12, now + idx * 0.1 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.18);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
 
-    osc.start(now);
-    osc.stop(now + 0.36);
+      osc.start(now + idx * 0.1);
+      osc.stop(now + idx * 0.1 + 0.2);
+    });
   } catch {}
 }
 
 /**
- * Play Call Ended disconnect tone
+ * Play brief Call Ended / Disconnected tone
  */
 export function playEndedChime() {
+  stopAllRingtones();
   try {
     const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(380, now);
-    osc.frequency.linearRampToValueAtTime(200, now + 0.25);
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.linearRampToValueAtTime(280, now + 0.25);
 
-    gain.gain.setValueAtTime(0.15, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.3);
+    osc.stop(now + 0.32);
   } catch {}
 }

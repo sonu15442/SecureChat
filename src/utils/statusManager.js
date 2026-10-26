@@ -72,8 +72,29 @@ export const STATUS_BACKGROUND_GRADIENTS = [
 // In-memory fallback store to ensure statuses never fail even if LocalStorage hits quota limits
 let inMemoryStatuses = [];
 
+function safePersistStatuses(statuses) {
+  try {
+    localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(statuses));
+  } catch (err) {
+    try {
+      // If large base64 media exceeds localStorage quota, save metadata with light media references
+      const light = statuses.map(s => {
+        const isHugeVideo = typeof s.videoUrl === 'string' && s.videoUrl.length > 200000;
+        const isHugeImage = typeof s.imageUrl === 'string' && s.imageUrl.length > 300000;
+        return {
+          ...s,
+          videoUrl: isHugeVideo ? null : s.videoUrl,
+          imageUrl: isHugeImage ? null : s.imageUrl,
+          hasFullMediaOnServer: isHugeVideo || isHugeImage
+        };
+      });
+      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(light));
+    } catch {}
+  }
+}
+
 /**
- * Fetch active statuses (removes statuses older than 24 hours)
+ * Fetch active statuses (removes statuses strictly older than 24 hours)
  */
 export function getActiveStatuses() {
   const now = Date.now();
@@ -88,7 +109,8 @@ export function getActiveStatuses() {
     [...inMemoryStatuses, ...localAll].forEach(s => {
       if (!s || !s.id) return;
       const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
-      if (!isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS) {
+      // Keep moment for full 24 hours (86,400,000 ms)
+      if (!isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS) {
         combinedMap.set(s.id, { ...s, timestamp: ts });
       }
     });
@@ -103,11 +125,9 @@ export function getActiveStatuses() {
       .sort((a, b) => b.timestamp - a.timestamp);
     inMemoryStatuses = valid;
 
-    // Persist cleaned list back to localStorage to drop expired moments automatically
+    // Persist cleaned list back to localStorage to drop expired moments automatically (>24 hours)
     if (valid.length !== localAll.length) {
-      try {
-        localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(valid));
-      } catch {}
+      safePersistStatuses(valid);
     }
 
     return valid;
@@ -115,7 +135,7 @@ export function getActiveStatuses() {
     console.warn('Failed to parse localStorage statuses:', err);
     return inMemoryStatuses.filter(s => {
       const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
-      return !isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS;
+      return !isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS;
     });
   }
 }
@@ -137,16 +157,14 @@ export async function syncStatusesFromBackend() {
       serverMoments.forEach(s => {
         if (!s || !s.id) return;
         const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
-        if (!isNaN(ts) && Math.abs(now - ts) < TWENTY_FOUR_HOURS) {
+        if (!isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS) {
           combinedMap.set(s.id, { ...combinedMap.get(s.id), ...s, timestamp: ts });
         }
       });
 
       const merged = Array.from(combinedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
       inMemoryStatuses = merged;
-      try {
-        localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(merged));
-      } catch {}
+      safePersistStatuses(merged);
       return merged;
     }
   } catch {}
@@ -166,21 +184,15 @@ export function createStatusUpdate(statusData) {
   };
   
   // Add to memory list
-  inMemoryStatuses = [newStatus, ...existing];
+  inMemoryStatuses = [newStatus, ...existing.filter(s => s.id !== newStatus.id)];
 
   // Safely persist to LocalStorage (with memory store fallback)
-  try {
-    localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(inMemoryStatuses));
-  } catch (err) {
-    console.warn('LocalStorage quota limit reached, in-memory store active:', err);
-    try {
-      const recentLight = inMemoryStatuses.slice(0, 5);
-      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(recentLight));
-    } catch {}
-  }
+  safePersistStatuses(inMemoryStatuses);
 
-  // Broadcast & persist to backend server asynchronously so other users can see it instantly
-  createMomentApi(newStatus).catch(() => {});
+  // Broadcast & persist to backend server immediately so all devices see it and stay for 24 hours
+  createMomentApi(newStatus).catch((err) => {
+    console.warn('Error syncing created moment to server:', err);
+  });
 
   return newStatus;
 }
@@ -229,7 +241,7 @@ export function deleteStatus(statusId) {
     if (raw) {
       const all = JSON.parse(raw);
       const filtered = all.filter(s => s.id !== statusId && (now - s.timestamp) < TWENTY_FOUR_HOURS);
-      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(filtered));
+      safePersistStatuses(filtered);
     }
   } catch (err) {
     console.warn('Failed to delete status from localStorage:', err);

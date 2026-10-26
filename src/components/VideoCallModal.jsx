@@ -3,6 +3,7 @@ import { Mic, MicOff, Video, VideoOff, PhoneOff, ShieldCheck, Monitor, AlertCirc
 import {
   startOutgoingRingtone,
   stopOutgoingRingtone,
+  stopAllRingtones,
   playConnectedChime,
   playEndedChime
 } from '../utils/callAudio';
@@ -52,10 +53,10 @@ export default function VideoCallModal({
     if (callStatus === 'ringing' && isCaller) {
       startOutgoingRingtone();
     } else {
-      stopOutgoingRingtone();
+      stopAllRingtones();
     }
     return () => {
-      stopOutgoingRingtone();
+      stopAllRingtones();
     };
   }, [callStatus, isCaller]);
 
@@ -175,7 +176,7 @@ export default function VideoCallModal({
 
     return () => {
       cancelled = true;
-      stopOutgoingRingtone();
+      stopAllRingtones();
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
       if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(t => t.stop());
       if (pcRef.current) pcRef.current.close();
@@ -227,7 +228,7 @@ export default function VideoCallModal({
     try {
       if (signal.type === 'call_accepted') {
         setCallStatus('connected');
-        stopOutgoingRingtone();
+        stopAllRingtones();
         playConnectedChime();
         if (isCaller) {
           await sendOffer();
@@ -239,7 +240,7 @@ export default function VideoCallModal({
         }
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         setCallStatus('connected');
-        stopOutgoingRingtone();
+        stopAllRingtones();
         playConnectedChime();
         processQueuedSignals();
 
@@ -260,7 +261,7 @@ export default function VideoCallModal({
         }
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         setCallStatus('connected');
-        stopOutgoingRingtone();
+        stopAllRingtones();
         playConnectedChime();
         processQueuedSignals();
       } else if (signal.type === 'ice_candidate') {
@@ -363,7 +364,7 @@ export default function VideoCallModal({
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
     recordAction('Session Management', 'User terminates video call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
-    stopOutgoingRingtone();
+    stopAllRingtones();
     playEndedChime();
     if (onEndCall) onEndCall(call, duration);
     else if (onClose) onClose();
@@ -405,12 +406,13 @@ export default function VideoCallModal({
 
         {/* Video Area */}
         <div className="flex-1 relative bg-slate-950 flex items-center justify-center overflow-hidden">
-          {/* Main Remote Video Element — Always mounted to receive audio & video tracks */}
+          {/* Main Remote Video Element — Always mounted & active to decode audio & video tracks */}
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className={`w-full h-full object-cover ${callStatus === 'connected' ? 'block' : 'hidden'}`}
+            className="w-full h-full object-cover"
+            style={callStatus === 'connected' ? {} : { position: 'absolute', opacity: 0.001, pointerEvents: 'none' }}
           />
           {callStatus !== 'connected' && (
             /* Ringing Screen before callee picks up */
