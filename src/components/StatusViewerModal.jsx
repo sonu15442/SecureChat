@@ -1,8 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye, Pause, Play, Trash2, ChevronUp, UserCheck } from 'lucide-react';
-import { markStatusAsViewed, deleteStatus } from '../utils/statusManager';
+import { markStatusAsViewed, deleteStatus, getActiveStatuses } from '../utils/statusManager';
 import { playStatusSong, stopStatusSong } from '../utils/statusAudioPlayer';
 import { recordAction } from '../utils/testRecorder';
+
+// Convert base64 data URLs to streamable Blob URLs for smooth, hardware-accelerated Android WebView playback
+function createBlobUrlFromDataUri(dataUri) {
+  if (!dataUri || typeof dataUri !== 'string') return null;
+  if (!dataUri.startsWith('data:')) return dataUri;
+
+  try {
+    const arr = dataUri.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'video/mp4';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    const blob = new Blob([u8arr], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (err) {
+    console.warn('Could not create Blob URL from data URI, falling back to raw URI:', err);
+    return dataUri;
+  }
+}
 
 export default function StatusViewerModal({ statusGroup, currentUserId, allUsers = [], onDeleteStatus, onClose }) {
   const [localStatuses, setLocalStatuses] = useState(() => statusGroup?.statuses || []);
@@ -12,6 +35,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
   const [isMuted, setIsMuted] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [showViewersList, setShowViewersList] = useState(false);
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState(null);
 
   const timerRef = useRef(null);
   const videoRef = useRef(null);
@@ -22,8 +46,44 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
     }
   }, [statusGroup]);
 
+  // Listen for IndexedDB hydration in case videoUrl was restored in the background
+  useEffect(() => {
+    const handleHydrated = () => {
+      const active = getActiveStatuses();
+      const updated = active.filter(s => String(s.userId) === String(statusGroup?.userId));
+      if (updated.length > 0) {
+        setLocalStatuses(updated);
+      }
+    };
+    window.addEventListener('securechat_moments_hydrated', handleHydrated);
+    return () => window.removeEventListener('securechat_moments_hydrated', handleHydrated);
+  }, [statusGroup?.userId]);
+
   const currentStatus = localStatuses[currentIndex];
   const totalStatuses = localStatuses.length;
+
+  // Convert data URI video to streamable Blob URL for Android WebView compatibility
+  useEffect(() => {
+    let activeBlobUrl = null;
+    const rawVideoUrl = currentStatus?.videoUrl;
+
+    if (rawVideoUrl) {
+      if (rawVideoUrl.startsWith('data:')) {
+        activeBlobUrl = createBlobUrlFromDataUri(rawVideoUrl);
+        setResolvedVideoUrl(activeBlobUrl);
+      } else {
+        setResolvedVideoUrl(rawVideoUrl);
+      }
+    } else {
+      setResolvedVideoUrl(null);
+    }
+
+    return () => {
+      if (activeBlobUrl && activeBlobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(activeBlobUrl);
+      }
+    };
+  }, [currentStatus?.id, currentStatus?.videoUrl]);
 
   // Resolve viewer profiles (avatars & names) - ONLY other users who viewed this Moment
   // The creator/author ("who kept their seen") must NOT appear in this list
@@ -58,7 +118,7 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
         videoRef.current.pause();
       }
     }
-  }, [isPlaying, isMuted, showViewersList, currentIndex, currentStatus]);
+  }, [isPlaying, isMuted, showViewersList, currentIndex, resolvedVideoUrl]);
 
   // Audio Playback
   useEffect(() => {
@@ -199,18 +259,33 @@ export default function StatusViewerModal({ statusGroup, currentUserId, allUsers
           }}
         >
           {(currentStatus.type === 'video' || currentStatus.videoUrl) ? (
-            <>
-              <video
-                ref={videoRef}
-                src={currentStatus.videoUrl}
-                autoPlay
-                playsInline
-                loop
-                muted={isMuted}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60 pointer-events-none" />
-            </>
+            resolvedVideoUrl ? (
+              <>
+                <video
+                  ref={videoRef}
+                  src={resolvedVideoUrl}
+                  autoPlay
+                  playsInline
+                  loop
+                  muted={isMuted}
+                  onLoadedData={() => {
+                    if (isPlaying && !showViewersList && videoRef.current) {
+                      videoRef.current.play().catch(() => {});
+                    }
+                  }}
+                  onError={(e) => {
+                    console.warn('Video playback error in story viewer:', e);
+                  }}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/60 pointer-events-none" />
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 text-cyan-400 p-6 z-10">
+                <div className="w-10 h-10 border-4 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                <p className="text-xs font-semibold text-slate-300">Loading Video Story...</p>
+              </div>
+            )
           ) : currentStatus.imageUrl ? (
             <>
               <img src={currentStatus.imageUrl} alt="Status" className="w-full h-full object-cover" />

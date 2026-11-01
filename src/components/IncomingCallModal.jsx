@@ -17,6 +17,13 @@ export default function IncomingCallModal({ call, onAccept, onDecline, allUsers 
 
   const handleAccept = () => {
     stopAllRingtones();
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        ctx.resume().catch(() => {});
+      }
+    } catch {}
     onAccept();
   };
 

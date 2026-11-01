@@ -20,7 +20,8 @@ import {
   saveMessage,
   getDbHealth,
   clearAllUsersFromDb,
-  clearMessagesFromDb
+  clearMessagesFromDb,
+  updateUserLastSeen
 } from './db.js';
 
 dotenv.config();
@@ -32,8 +33,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // ── Middleware ──
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '200mb' }));
+app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 
 // CORS
 app.use((req, res, next) => {
@@ -46,7 +47,11 @@ app.use((req, res, next) => {
 
 // In-memory active presence tracking across devices
 const activePresenceMap = new Map(); // userId -> { user, lastSeen }
-const PRESENCE_TIMEOUT_MS = 60000; // 60s keeps user reliably online with active heartbeat
+const PRESENCE_TIMEOUT_MS = 6000; // 6s timeout keeps presence strictly realtime
+
+// Active Call Signaling & State Hub for Web & Mobile
+const activeCallSignals = new Map(); // callId -> Array of { signal, timestamp }
+const activeCalls = new Map(); // callId -> { callId, status, callerId, recipientId, lastUpdated }
 
 // Server-Sent Events (SSE) clients for instant cross-device realtime synchronization
 const sseClients = new Set();
@@ -64,12 +69,42 @@ export function broadcastEvent(type, payload) {
 
 function cleanStalePresence() {
   const now = Date.now();
+  let changed = false;
   for (const [userId, record] of activePresenceMap.entries()) {
     if (now - record.lastSeen > PRESENCE_TIMEOUT_MS) {
+      const lastSeenIso = new Date(record.lastSeen).toISOString();
+      updateUserLastSeen(userId, lastSeenIso).catch(() => {});
       activePresenceMap.delete(userId);
+      changed = true;
     }
   }
+  if (changed) {
+    const onlineUserIds = Array.from(activePresenceMap.keys());
+    broadcastEvent('presence', { onlineUserIds });
+    getAllUsers().then(rawUsers => {
+      const safeUsers = rawUsers.map(({ passwordHash: _, ...u }) => ({
+        ...u,
+        isOnline: activePresenceMap.has(u.id),
+        lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || new Date().toISOString())
+      }));
+      broadcastEvent('users_updated', { users: safeUsers });
+    }).catch(() => {});
+  }
 }
+
+// Periodically purge stale presence every 2.5 seconds
+setInterval(cleanStalePresence, 2500);
+
+// Periodically clean up stale call signaling buffers older than 2 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [callId, call] of activeCalls.entries()) {
+    if (now - call.lastUpdated > 120000) {
+      activeCalls.delete(callId);
+      activeCallSignals.delete(callId);
+    }
+  }
+}, 15000);
 
 // Serve static frontend files from dist/
 const distPath = join(__dirname, 'dist');
@@ -746,9 +781,13 @@ app.get('/api/users', async (req, res) => {
     const rawUsers = await getAllUsers();
     const users = rawUsers.map(({ passwordHash, ...u }) => {
       const isOnline = activePresenceMap.has(u.id);
+      const safeLastSeen = (u.lastSeen && u.lastSeen !== 'Online')
+        ? u.lastSeen
+        : (u.updatedAt || u.createdAt || new Date().toISOString());
       return {
         ...u,
-        isOnline
+        isOnline,
+        lastSeen: safeLastSeen
       };
     });
     res.json({ users, onlineUserIds: Array.from(activePresenceMap.keys()) });
@@ -769,12 +808,16 @@ app.get('/api/users/search', async (req, res) => {
     const rawUsers = await searchUsersInDb(q);
     const users = rawUsers.map(({ passwordHash: _discarded, ...u }) => {
       const isOnline = activePresenceMap.has(u.id);
+      const safeLastSeen = (u.lastSeen && u.lastSeen !== 'Online')
+        ? u.lastSeen
+        : (u.updatedAt || u.createdAt || new Date().toISOString());
       return {
         ...u,
-        isOnline
+        isOnline,
+        lastSeen: safeLastSeen
       };
     });
-    res.json({ users });
+    res.json({ users, onlineUserIds: Array.from(activePresenceMap.keys()) });
   } catch (err) {
     console.error('User search error:', err);
     res.status(500).json({ error: 'Failed to search users.' });
@@ -818,22 +861,25 @@ app.post('/api/users/sync', async (req, res) => {
       return res.status(409).json({ error: 'Name already exists. Please choose a different display name.' });
     }
 
+    const nowTs = new Date().toISOString();
     await upsertUser({
       ...user,
       passwordHash: user.passwordHash || hashPassword('12345678')
     });
 
     activePresenceMap.set(user.id, { user, lastSeen: Date.now() });
+    await updateUserLastSeen(user.id, nowTs);
     cleanStalePresence();
 
     const rawUsers = await getAllUsers();
     const safeUsers = rawUsers.map(({ passwordHash, ...u }) => ({
       ...u,
-      isOnline: activePresenceMap.has(u.id)
+      isOnline: activePresenceMap.has(u.id),
+      lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || nowTs)
     }));
 
     // Broadcast instant cross-device user update
-    broadcastEvent('user_updated', { user });
+    broadcastEvent('user_updated', { user: { ...user, isOnline: true, lastSeen: nowTs } });
     broadcastEvent('users_updated', { users: safeUsers });
 
     res.status(200).json({ success: true, users: safeUsers });
@@ -863,7 +909,8 @@ app.post('/api/sync/all', async (req, res) => {
     const rawUsers = await getAllUsers();
     const safeUsers = rawUsers.map(({ passwordHash, ...u }) => ({
       ...u,
-      isOnline: activePresenceMap.has(u.id)
+      isOnline: activePresenceMap.has(u.id),
+      lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || new Date().toISOString())
     }));
     broadcastEvent('users_updated', { users: safeUsers });
     res.json({ success: true, users: safeUsers });
@@ -884,7 +931,12 @@ app.post('/api/presence/heartbeat', async (req, res) => {
       return res.status(400).json({ error: 'Valid user object required.' });
     }
 
+    const nowTs = new Date().toISOString();
+    const wasOnline = activePresenceMap.has(user.id);
     activePresenceMap.set(user.id, { user, lastSeen: Date.now() });
+
+    // Always keep lastSeen timestamp updated in DB
+    await updateUserLastSeen(user.id, nowTs).catch(() => {});
 
     // Sync profile updates to DB if needed
     if (user.name || user.avatar || user.bio !== undefined) {
@@ -893,11 +945,30 @@ app.post('/api/presence/heartbeat', async (req, res) => {
         avatar: user.avatar,
         bio: user.bio
       });
+
+      // Instantly broadcast profile update across all devices
+      const rawUsers = await getAllUsers();
+      const safeUsers = rawUsers.map(({ passwordHash, ...u }) => ({
+        ...u,
+        isOnline: activePresenceMap.has(u.id),
+        lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || nowTs)
+      }));
+      broadcastEvent('user_updated', { user: { ...user, isOnline: true, lastSeen: nowTs } });
+      broadcastEvent('users_updated', { users: safeUsers });
     }
 
     cleanStalePresence();
     const onlineUserIds = Array.from(activePresenceMap.keys());
-    broadcastEvent('presence', { onlineUserIds });
+    if (!wasOnline) {
+      broadcastEvent('presence', { onlineUserIds });
+      const rawUsers = await getAllUsers();
+      const safeUsers = rawUsers.map(({ passwordHash, ...u }) => ({
+        ...u,
+        isOnline: activePresenceMap.has(u.id),
+        lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || nowTs)
+      }));
+      broadcastEvent('users_updated', { users: safeUsers });
+    }
     res.json({ success: true, onlineUserIds });
   } catch (err) {
     console.error('Heartbeat error:', err);
@@ -908,11 +979,21 @@ app.post('/api/presence/heartbeat', async (req, res) => {
 /**
  * POST /api/presence/leave
  */
-app.post('/api/presence/leave', (req, res) => {
+app.post('/api/presence/leave', async (req, res) => {
   const { userId } = req.body;
   if (userId) {
+    const nowTs = new Date().toISOString();
+    await updateUserLastSeen(userId, nowTs).catch(() => {});
     activePresenceMap.delete(userId);
-    broadcastEvent('presence', { onlineUserIds: Array.from(activePresenceMap.keys()) });
+    const onlineUserIds = Array.from(activePresenceMap.keys());
+    broadcastEvent('presence', { onlineUserIds });
+    const rawUsers = await getAllUsers();
+    const safeUsers = rawUsers.map(({ passwordHash, ...u }) => ({
+      ...u,
+      isOnline: activePresenceMap.has(u.id),
+      lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || nowTs)
+    }));
+    broadcastEvent('users_updated', { users: safeUsers });
   }
   res.json({ success: true });
 });
@@ -920,7 +1001,7 @@ app.post('/api/presence/leave', (req, res) => {
 /**
  * POST /api/call/signal
  * Relays WebRTC signaling (call_invite, call_accepted, call_reject, call_cancel, call_end, offer, answer, ice_candidate)
- * between Web and Mobile clients via Server-Sent Events (SSE)
+ * between Web and Mobile clients via Server-Sent Events (SSE) and persistent active call memory queue
  */
 app.post('/api/call/signal', (req, res) => {
   try {
@@ -928,12 +1009,74 @@ app.post('/api/call/signal', (req, res) => {
     if (!signal || !signal.type) {
       return res.status(400).json({ error: 'Valid signal payload required.' });
     }
+
+    const callId = signal.callId || (signal.call && signal.call.callId);
+    const now = Date.now();
+
+    if (callId) {
+      if (!activeCallSignals.has(callId)) {
+        activeCallSignals.set(callId, []);
+      }
+      activeCallSignals.get(callId).push({ signal, timestamp: now });
+
+      let call = activeCalls.get(callId);
+      if (!call) {
+        call = {
+          callId,
+          status: signal.type === 'call_accepted' ? 'connected' : 'ringing',
+          callerId: signal.caller?.id || signal.senderId,
+          recipientId: signal.recipientId || signal.targetId,
+          lastUpdated: now
+        };
+        activeCalls.set(callId, call);
+      } else {
+        call.lastUpdated = now;
+        if (signal.type === 'call_accepted') {
+          call.status = 'connected';
+        } else if (signal.type === 'call_end' || signal.type === 'call_reject' || signal.type === 'call_cancel') {
+          call.status = 'ended';
+        }
+      }
+    }
+
     // Broadcast instantly to all connected devices on SSE
     broadcastEvent('call_signal', signal);
-    res.json({ success: true, type: signal.type, timestamp: Date.now() });
+    res.json({ success: true, type: signal.type, timestamp: now });
   } catch (err) {
     console.error('Call signal relay error:', err);
     res.status(500).json({ error: 'Failed to relay call signal.' });
+  }
+});
+
+/**
+ * GET /api/call/sync
+ * Allows Web and Mobile clients to poll recent signals for active call
+ * Guarantees zero dropped call_accepted, offer, answer, or ice_candidate events
+ */
+app.get('/api/call/sync', (req, res) => {
+  try {
+    const { callId, since = 0, userId } = req.query;
+    if (!callId) {
+      return res.status(400).json({ error: 'callId required.' });
+    }
+
+    const call = activeCalls.get(callId);
+    const signalsList = activeCallSignals.get(callId) || [];
+    const sinceTs = Number(since) || 0;
+
+    const newSignals = signalsList
+      .filter(item => item.timestamp > sinceTs)
+      .map(item => item.signal);
+
+    res.json({
+      success: true,
+      callId,
+      status: call ? call.status : 'unknown',
+      signals: newSignals,
+      serverTime: Date.now()
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to sync call signals.' });
   }
 });
 

@@ -9,6 +9,8 @@ let outgoingOscillators = [];
 let incomingOscillators = [];
 let masterOutgoingGain = null;
 let masterIncomingGain = null;
+let isOutgoingPlaying = false;
+let isIncomingPlaying = false;
 
 function getAudioContext() {
   if (!audioCtx || audioCtx.state === 'closed') {
@@ -25,10 +27,46 @@ function getAudioContext() {
 
 /**
  * Stop any and all active ringtones instantly with zero delay
+ * Forcefully stops all scheduled oscillators and silences gain nodes
  */
 export function stopAllRingtones() {
-  stopOutgoingRingtone();
-  stopIncomingRingtone();
+  isOutgoingPlaying = false;
+  isIncomingPlaying = false;
+
+  if (outgoingInterval) {
+    clearInterval(outgoingInterval);
+    outgoingInterval = null;
+  }
+  if (incomingInterval) {
+    clearInterval(incomingInterval);
+    incomingInterval = null;
+  }
+
+  outgoingOscillators.forEach(osc => {
+    try { osc.stop(0); osc.disconnect(); } catch {}
+  });
+  outgoingOscillators = [];
+
+  incomingOscillators.forEach(osc => {
+    try { osc.stop(0); osc.disconnect(); } catch {}
+  });
+  incomingOscillators = [];
+
+  if (masterOutgoingGain) {
+    try {
+      masterOutgoingGain.gain.setValueAtTime(0, 0);
+      masterOutgoingGain.disconnect();
+    } catch {}
+    masterOutgoingGain = null;
+  }
+
+  if (masterIncomingGain) {
+    try {
+      masterIncomingGain.gain.setValueAtTime(0, 0);
+      masterIncomingGain.disconnect();
+    } catch {}
+    masterIncomingGain = null;
+  }
 }
 
 /**
@@ -36,8 +74,8 @@ export function stopAllRingtones() {
  * Produces standard periodic dual-tone cadence (440Hz + 480Hz)
  */
 export function startOutgoingRingtone() {
-  stopOutgoingRingtone();
-  stopIncomingRingtone();
+  stopAllRingtones();
+  isOutgoingPlaying = true;
 
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -48,7 +86,7 @@ export function startOutgoingRingtone() {
 
   const playToneBurst = () => {
     try {
-      if (!masterOutgoingGain) return;
+      if (!isOutgoingPlaying || !masterOutgoingGain || !audioCtx) return;
       const now = ctx.currentTime;
 
       const osc1 = ctx.createOscillator();
@@ -83,6 +121,7 @@ export function startOutgoingRingtone() {
 }
 
 export function stopOutgoingRingtone() {
+  isOutgoingPlaying = false;
   if (outgoingInterval) {
     clearInterval(outgoingInterval);
     outgoingInterval = null;
@@ -95,7 +134,7 @@ export function stopOutgoingRingtone() {
     masterOutgoingGain = null;
   }
   outgoingOscillators.forEach(osc => {
-    try { osc.stop(); } catch {}
+    try { osc.stop(0); osc.disconnect(); } catch {}
   });
   outgoingOscillators = [];
 }
@@ -105,8 +144,8 @@ export function stopOutgoingRingtone() {
  * Loops a bright, cheerful arpeggiated melodic chime until picked up or declined
  */
 export function startIncomingRingtone() {
-  stopOutgoingRingtone();
-  stopIncomingRingtone();
+  stopAllRingtones();
+  isIncomingPlaying = true;
 
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -117,7 +156,7 @@ export function startIncomingRingtone() {
 
   const playMelody = () => {
     try {
-      if (!masterIncomingGain) return;
+      if (!isIncomingPlaying || !masterIncomingGain || !audioCtx) return;
       const now = ctx.currentTime;
 
       // WhatsApp / iPhone style musical ringtone sequence
@@ -157,6 +196,7 @@ export function startIncomingRingtone() {
 }
 
 export function stopIncomingRingtone() {
+  isIncomingPlaying = false;
   if (incomingInterval) {
     clearInterval(incomingInterval);
     incomingInterval = null;
@@ -169,7 +209,7 @@ export function stopIncomingRingtone() {
     masterIncomingGain = null;
   }
   incomingOscillators.forEach(osc => {
-    try { osc.stop(); } catch {}
+    try { osc.stop(0); osc.disconnect(); } catch {}
   });
   incomingOscillators = [];
 }

@@ -9,6 +9,7 @@ import {
 } from '../utils/callAudio';
 import { recordAction } from '../utils/testRecorder';
 import { on } from '../utils/realtimeChannel';
+import { syncCallSignals } from '../utils/api';
 
 const RTC_CONFIG = {
   iceServers: [
@@ -17,8 +18,18 @@ const RTC_CONFIG = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
-  ]
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    {
+      urls: [
+        'turn:standard.relay.metered.ca:80',
+        'turn:standard.relay.metered.ca:443',
+        'turn:standard.relay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 export default function VoiceCallModal({
@@ -45,6 +56,8 @@ export default function VoiceCallModal({
   const remoteStreamRef = useRef(null);
   const pcRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const remoteAudioCtxRef = useRef(null);
+  const remoteGainRef = useRef(null);
 
   const audioCtxRef = useRef(null);
   const animFrameRef = useRef(null);
@@ -52,6 +65,7 @@ export default function VoiceCallModal({
   const hasSentOfferRef = useRef(false);
   const pendingOfferRef = useRef(null);
   const pendingAnswerRef = useRef(null);
+  const processedSignalsRef = useRef(new Set());
 
   // 1. Manage Outgoing Ringback Tone if caller
   useEffect(() => {
@@ -69,11 +83,89 @@ export default function VoiceCallModal({
   useEffect(() => {
     if (call?.status && call.status !== callStatus) {
       if (call.status === 'connected' && callStatus === 'ringing') {
+        stopAllRingtones();
         playConnectedChime();
       }
       setCallStatus(call.status);
     }
   }, [call?.status, callStatus]);
+
+  // Caller active polling sync during ringing guarantees ringtone stops immediately when Callee picks up
+  useEffect(() => {
+    if (isCaller && callStatus === 'ringing') {
+      let lastCheck = Date.now() - 10000;
+      const pollTimer = setInterval(async () => {
+        if (callStatus !== 'ringing') {
+          clearInterval(pollTimer);
+          return;
+        }
+        try {
+          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
+          if (res) {
+            lastCheck = res.serverTime || Date.now();
+            if (res.status === 'connected' || (res.signals && res.signals.some(s => s.type === 'call_accepted'))) {
+              stopAllRingtones();
+              setCallStatus('connected');
+              playConnectedChime();
+              sendOffer();
+            } else if (res.status === 'ended' || (res.signals && res.signals.some(s => s.type === 'call_reject' || s.type === 'call_end' || s.type === 'call_cancel'))) {
+              stopAllRingtones();
+              handleEndCallAction();
+            }
+          }
+        } catch {}
+      }, 400);
+      return () => clearInterval(pollTimer);
+    }
+  }, [isCaller, callStatus, call.callId, targetUser?.id]);
+
+  // Callee retry for call_accepted until offer arrives
+  useEffect(() => {
+    if (!isCaller && callStatus === 'connected' && !pcRef.current?.remoteDescription) {
+      let attempts = 0;
+      const retryTimer = setInterval(() => {
+        attempts++;
+        if (pcRef.current?.remoteDescription || attempts > 5) {
+          clearInterval(retryTimer);
+          return;
+        }
+        if (onSendSignal) {
+          onSendSignal({
+            type: 'call_accepted',
+            callId: call.callId,
+            recipientId: targetUser.id,
+            targetId: targetUser.id
+          });
+        }
+      }, 600);
+      return () => clearInterval(retryTimer);
+    }
+  }, [isCaller, callStatus, call.callId, targetUser?.id]);
+
+  // Periodic signal polling fallback during WebRTC handshake
+  useEffect(() => {
+    if (callStatus === 'connected') {
+      let lastCheck = Date.now() - 5000;
+      const syncTimer = setInterval(async () => {
+        const pc = pcRef.current;
+        if (!pc || pc.connectionState === 'connected') {
+          return;
+        }
+        try {
+          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
+          if (res && Array.isArray(res.signals)) {
+            lastCheck = res.serverTime || Date.now();
+            for (const sig of res.signals) {
+              if (sig && sig.callId === call.callId) {
+                handleSignal(sig);
+              }
+            }
+          }
+        } catch {}
+      }, 500);
+      return () => clearInterval(syncTimer);
+    }
+  }, [callStatus, call.callId, targetUser?.id]);
 
   // Ensure caller automatically creates offer once call transitions to connected
   useEffect(() => {
@@ -95,13 +187,28 @@ export default function VoiceCallModal({
 
     async function initWebRTC() {
       try {
-        // Access user microphone
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Access user microphone with fallback if advanced constraints fail
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+        } catch (err1) {
+          console.warn('[WebRTC Voice] Advanced audio constraints failed, trying basic audio:', err1);
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
         if (cancelled) {
           stream.getTracks().forEach(t => t.stop());
           return;
         }
         localStreamRef.current = stream;
+
+        // Ensure all local audio tracks are active
+        stream.getAudioTracks().forEach(t => { t.enabled = true; });
 
         // Setup Audio Analyser for local voice visualization
         try {
@@ -128,6 +235,13 @@ export default function VoiceCallModal({
         const pc = new RTCPeerConnection(RTC_CONFIG);
         pcRef.current = pc;
 
+        pc.oniceconnectionstatechange = () => {
+          console.log('[WebRTC Voice] ICE Connection State:', pc.iceConnectionState);
+        };
+        pc.onconnectionstatechange = () => {
+          console.log('[WebRTC Voice] Connection State:', pc.connectionState);
+        };
+
         // Add local tracks to peer connection
         stream.getAudioTracks().forEach(track => {
           pc.addTrack(track, stream);
@@ -135,8 +249,12 @@ export default function VoiceCallModal({
 
         // Remote track received from peer (User 2 or User 1)
         pc.ontrack = (event) => {
+          console.log('[WebRTC Voice] Remote track received:', event.track.id, event.track.kind);
+          event.track.enabled = true;
+
           const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
           remoteStreamRef.current = stream;
+
           if (remoteAudioRef.current) {
             remoteAudioRef.current.srcObject = stream;
             remoteAudioRef.current.muted = !isSpeakerOn;
@@ -144,31 +262,58 @@ export default function VoiceCallModal({
             const playPromise = remoteAudioRef.current.play();
             if (playPromise !== undefined) {
               playPromise.catch(e => {
-                console.warn('HTML5 Audio play autoplay blocked, adding resume listeners:', e);
+                console.warn('HTML5 Audio autoplay unlock pending user interaction:', e);
                 const resumeVoice = () => {
-                  if (remoteAudioRef.current) remoteAudioRef.current.play().catch(() => {});
+                  if (remoteAudioRef.current) {
+                    remoteAudioRef.current.muted = false;
+                    remoteAudioRef.current.volume = 1.0;
+                    remoteAudioRef.current.play().catch(() => {});
+                  }
                   window.removeEventListener('click', resumeVoice);
                   window.removeEventListener('touchstart', resumeVoice);
                 };
-                window.addEventListener('click', resumeVoice);
-                window.addEventListener('touchstart', resumeVoice);
+                window.addEventListener('click', resumeVoice, { once: true });
+                window.addEventListener('touchstart', resumeVoice, { once: true });
               });
             }
           }
-          // Secondary fallback direct WebAudio route for guaranteed playback
+
+          // Dedicated Web Audio API output and voice visualizer
           try {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (AudioCtx) {
-              const rCtx = new AudioCtx();
-              if (rCtx.state === 'suspended') rCtx.resume();
-              const rSource = rCtx.createMediaStreamSource(stream);
-              const rGain = rCtx.createGain();
-              rGain.gain.value = isSpeakerOn ? 1.0 : 0.0;
-              rSource.connect(rGain);
-              rGain.connect(rCtx.destination);
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
+              remoteAudioCtxRef.current = new AudioContextClass();
             }
-          } catch (e) {
-            console.warn('WebAudio direct playback error:', e);
+            const actx = remoteAudioCtxRef.current;
+            if (actx.state === 'suspended') {
+              actx.resume().catch(() => {});
+            }
+
+            if (!remoteGainRef.current) {
+              const streamClone = stream.clone();
+              const source = actx.createMediaStreamSource(streamClone);
+              const gainNode = actx.createGain();
+              gainNode.gain.setValueAtTime(isSpeakerOn ? 1.0 : 0.0, actx.currentTime);
+              
+              const analyser = actx.createAnalyser();
+              analyser.fftSize = 256;
+              source.connect(analyser);
+              source.connect(gainNode);
+              gainNode.connect(actx.destination);
+
+              const dataArr = new Uint8Array(analyser.frequencyBinCount);
+              const updateRemoteVoice = () => {
+                if (cancelled) return;
+                analyser.getByteFrequencyData(dataArr);
+                const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
+                setRemoteAudioLevel(avg / 255);
+                requestAnimationFrame(updateRemoteVoice);
+              };
+              updateRemoteVoice();
+              remoteGainRef.current = gainNode;
+            }
+          } catch (err) {
+            console.warn('Web Audio meter warning:', err);
           }
         };
 
@@ -221,6 +366,14 @@ export default function VoiceCallModal({
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
+      if (remoteGainRef.current) {
+        try { remoteGainRef.current.disconnect(); } catch {}
+        remoteGainRef.current = null;
+      }
+      if (remoteAudioCtxRef.current) {
+        try { remoteAudioCtxRef.current.close().catch(() => {}); } catch {}
+        remoteAudioCtxRef.current = null;
+      }
       if (pcRef.current) pcRef.current.close();
     };
   }, []);
@@ -236,6 +389,15 @@ export default function VoiceCallModal({
     }
     try {
       hasSentOfferRef.current = true;
+      if (localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = !isMuted;
+          const senders = pc.getSenders ? pc.getSenders() : [];
+          if (!senders.some(s => s.track && s.track.id === track.id)) {
+            pc.addTrack(track, localStreamRef.current);
+          }
+        });
+      }
       const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
       await pc.setLocalDescription(offer);
       if (onSendSignal) {
@@ -255,17 +417,25 @@ export default function VoiceCallModal({
   // Process any incoming WebRTC signals (offer, answer, ice_candidate)
   const processQueuedSignals = async () => {
     const pc = pcRef.current;
-    if (!pc) return;
+    if (!pc || !pc.remoteDescription) return;
     while (candidateQueue.current.length > 0) {
       const cand = candidateQueue.current.shift();
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(cand));
-      } catch {}
+      if (cand && (cand.candidate || typeof cand === 'object')) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch {}
+      }
     }
   };
 
   const handleSignal = async (signal) => {
     if (!signal || signal.callId !== call.callId) return;
+    if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
+
+    const sigKey = `${signal.type}_${signal.timestamp || ''}_${signal.candidate?.candidate || ''}_${signal.sdp?.sdp?.slice(0, 30) || ''}`;
+    if (processedSignalsRef.current.has(sigKey)) return;
+    processedSignalsRef.current.add(sigKey);
+
     const pc = pcRef.current;
 
     try {
@@ -286,6 +456,16 @@ export default function VoiceCallModal({
         stopAllRingtones();
         playConnectedChime();
         processQueuedSignals();
+
+        if (localStreamRef.current) {
+          localStreamRef.current.getAudioTracks().forEach(track => {
+            track.enabled = !isMuted;
+            const senders = pc.getSenders ? pc.getSenders() : [];
+            if (!senders.some(s => s.track && s.track.id === track.id)) {
+              pc.addTrack(track, localStreamRef.current);
+            }
+          });
+        }
 
         const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
         await pc.setLocalDescription(answer);
@@ -308,10 +488,14 @@ export default function VoiceCallModal({
         playConnectedChime();
         processQueuedSignals();
       } else if (signal.type === 'ice_candidate') {
-        if (pc && pc.remoteDescription) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-        } else {
-          candidateQueue.current.push(signal.candidate);
+        if (signal.candidate && (signal.candidate.candidate || typeof signal.candidate === 'object')) {
+          if (pc && pc.remoteDescription) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            } catch {}
+          } else {
+            candidateQueue.current.push(signal.candidate);
+          }
         }
       }
     } catch (err) {
@@ -341,6 +525,15 @@ export default function VoiceCallModal({
   useEffect(() => {
     if (remoteAudioRef.current) {
       remoteAudioRef.current.muted = !isSpeakerOn;
+      remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
+    }
+    if (remoteGainRef.current && remoteAudioCtxRef.current) {
+      try {
+        remoteGainRef.current.gain.setValueAtTime(
+          isSpeakerOn ? 1.0 : 0.0,
+          remoteAudioCtxRef.current.currentTime
+        );
+      } catch {}
     }
   }, [isSpeakerOn]);
 
@@ -369,12 +562,12 @@ export default function VoiceCallModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
-      {/* Remote Audio Output Element */}
+      {/* Remote Audio Output Element for Web & Mobile voice clarity */}
       <audio
         ref={remoteAudioRef}
         autoPlay
         playsInline
-        style={{ position: 'fixed', top: '-9000px', left: '-9000px', width: '1px', height: '1px', opacity: 0.01, pointerEvents: 'none' }}
+        style={{ position: 'fixed', top: '-9000px', left: '-9000px', width: '10px', height: '10px', opacity: 0.01, pointerEvents: 'none' }}
       />
 
       <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center justify-between min-h-[520px] border border-orange-500/30 bg-gradient-to-b from-[#091519] to-[#04080a] shadow-2xl relative overflow-hidden">

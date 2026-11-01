@@ -203,20 +203,30 @@ export async function initDatabase() {
         chat_id VARCHAR(64) NULL,
         sender_id VARCHAR(64) NOT NULL,
         receiver_id VARCHAR(64) NULL,
-        text TEXT,
+        text LONGTEXT NULL,
         timestamp VARCHAR(64) NULL,
         status VARCHAR(50) DEFAULT 'sent',
-        media_url TEXT NULL,
+        media_url LONGTEXT NULL,
         media_type VARCHAR(50) NULL,
         risk_level VARCHAR(50) NULL,
         threats JSON NULL,
-        raw_payload JSON NULL,
+        raw_payload LONGTEXT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_chat_id (chat_id),
         INDEX idx_sender_id (sender_id),
         INDEX idx_receiver_id (receiver_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure existing tables are migrated from TEXT (64KB) to LONGTEXT (4GB) for base64 media
+    try {
+      await pool.query(`
+        ALTER TABLE messages
+          MODIFY COLUMN text LONGTEXT NULL,
+          MODIFY COLUMN media_url LONGTEXT NULL,
+          MODIFY COLUMN raw_payload LONGTEXT NULL;
+      `);
+    } catch {}
 
     isDbConnected = true;
     lastDbError = null;
@@ -309,13 +319,17 @@ export async function getAllUsers() {
         status: r.status,
         passwordHash: r.password_hash,
         createdAt: r.created_at,
-        updatedAt: r.updated_at
+        updatedAt: r.updated_at,
+        lastSeen: r.last_seen || r.updated_at || r.created_at
       }));
     } catch (err) {
       console.error('[MySQL Error] getAllUsers failed, falling back to JSON:', err.message);
     }
   }
-  return loadUsersFromFile();
+  return (loadUsersFromFile() || []).map(u => ({
+    ...u,
+    lastSeen: u.lastSeen || u.updatedAt || u.createdAt || new Date().toISOString()
+  }));
 }
 
 export async function searchUsersInDb(query) {
@@ -345,7 +359,8 @@ export async function searchUsersInDb(query) {
         status: r.status,
         passwordHash: r.password_hash,
         createdAt: r.created_at,
-        updatedAt: r.updated_at
+        updatedAt: r.updated_at,
+        lastSeen: r.last_seen || r.updated_at || r.created_at
       }));
     } catch (err) {
       console.error('[MySQL Error] searchUsersInDb failed, falling back to JSON:', err.message);
@@ -561,10 +576,7 @@ export async function upsertUser(user) {
     }
   }
 
-  const cleanName = (user.email && user.email.toLowerCase().includes('sonupanigrahi029') && (user.name === '🥶' || !user.name))
-    ? 'Sonu Panigrahi'
-    : (user.name || '');
-  const sanitizedUser = { ...user, name: cleanName };
+  const sanitizedUser = { ...user, name: (user.name || '').trim() || 'User' };
 
   const users = loadUsersFromFile();
   const idx = users.findIndex(u => u.id === sanitizedUser.id || (u.email && sanitizedUser.email && u.email.toLowerCase() === sanitizedUser.email.toLowerCase()));
@@ -577,12 +589,28 @@ export async function upsertUser(user) {
   return sanitizedUser;
 }
 
+export async function updateUserLastSeen(id, lastSeen) {
+  const ts = lastSeen || new Date().toISOString();
+  if (isDbConnected && pool) {
+    try {
+      await pool.query('UPDATE users SET last_seen = ? WHERE id = ?', [ts, id]);
+    } catch {}
+  }
+  const users = loadUsersFromFile();
+  const idx = users.findIndex(u => u.id === id);
+  if (idx !== -1) {
+    users[idx].lastSeen = ts;
+    users[idx].updatedAt = ts;
+    saveUsersToFile(users);
+  }
+}
+
 export async function updateUserProfile(id, { name, avatar, bio }) {
   if (isDbConnected && pool) {
     try {
       const updates = [];
       const values = [];
-      if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+      if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
       if (avatar !== undefined) { updates.push('avatar = ?'); values.push(avatar); }
       if (bio !== undefined) { updates.push('bio = ?'); values.push(bio); }
       if (updates.length > 0) {
@@ -597,7 +625,7 @@ export async function updateUserProfile(id, { name, avatar, bio }) {
   const users = loadUsersFromFile();
   const idx = users.findIndex(u => u.id === id);
   if (idx !== -1) {
-    if (name !== undefined) users[idx].name = name;
+    if (name !== undefined) users[idx].name = name.trim();
     if (avatar !== undefined) users[idx].avatar = avatar;
     if (bio !== undefined) users[idx].bio = bio;
     users[idx].updatedAt = new Date().toISOString();
@@ -639,6 +667,14 @@ export async function getAllMessages() {
 export async function saveMessage(message) {
   if (!message || !message.id) return null;
 
+  const resolvedMediaUrl = message.mediaUrl || message.imageUrl || message.videoUrl || message.audioUrl || message.documentUrl || null;
+  const resolvedMediaType = message.mediaType || (
+    message.imageUrl ? 'image' :
+    message.videoUrl ? 'video' :
+    message.audioUrl ? 'audio' :
+    message.documentUrl ? 'document' : null
+  );
+
   if (isDbConnected && pool) {
     try {
       await pool.query(
@@ -647,6 +683,8 @@ export async function saveMessage(message) {
          ON DUPLICATE KEY UPDATE
            text = VALUES(text),
            status = VALUES(status),
+           media_url = VALUES(media_url),
+           media_type = VALUES(media_type),
            raw_payload = VALUES(raw_payload)`,
         [
           message.id,
@@ -656,8 +694,8 @@ export async function saveMessage(message) {
           message.text || '',
           message.timestamp || '',
           message.status || 'sent',
-          message.mediaUrl || null,
-          message.mediaType || null,
+          resolvedMediaUrl,
+          resolvedMediaType,
           message.riskLevel || null,
           message.threats ? JSON.stringify(message.threats) : null,
           JSON.stringify(message)

@@ -9,6 +9,7 @@ import IncomingCallModal from './components/IncomingCallModal';
 import CallUserPickerModal from './components/CallUserPickerModal';
 import SettingsPanel from './components/SettingsPanel';
 import AuthModal from './components/AuthModal';
+import AppIntroSplash from './components/AppIntroSplash';
 import StatusModal from './components/StatusModal';
 import StatusViewerModal from './components/StatusViewerModal';
 import { DEFAULT_SETTINGS } from './utils/initialData';
@@ -34,6 +35,7 @@ import {
   sendPresenceHeartbeat,
   sendPresenceLeave,
   getOfflineUsersDB,
+  saveOfflineUsersDB,
   initRealtimeEventStream,
   checkServerHealth,
   sendCallSignal,
@@ -41,10 +43,13 @@ import {
   followUserApi,
   unfollowUserApi
 } from './utils/api';
-import { getActiveStatuses, syncStatusesFromBackend } from './utils/statusManager';
+import { getActiveStatuses, syncStatusesFromBackend, deleteStatus } from './utils/statusManager';
 import { recordAction, getRecordedTests } from './utils/testRecorder';
 
 function App() {
+  const isTest = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+  const [showIntroSplash, setShowIntroSplash] = useState(!isTest);
+
   // ── Auth (Clean fresh slate startup) ──
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -222,6 +227,37 @@ function App() {
     recordAction('CRUD Operations', 'User clears all call history records');
   }, []);
 
+  // Fetch registered users from backend
+  const loadRegisteredUsers = useCallback(async () => {
+    try {
+      const users = await fetchAllUsers();
+      if (Array.isArray(users)) {
+        setRegisteredUsers(prev => {
+          if (prev.length === users.length && JSON.stringify(prev) === JSON.stringify(users)) {
+            return prev;
+          }
+          return users;
+        });
+        if (Array.isArray(users.onlineUserIds)) {
+          setOnlineUsers(users.onlineUserIds);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  }, []);
+
+  // Fetch stored messages from backend
+  const loadStoredMessages = useCallback(async () => {
+    try {
+      const history = await fetchStoredMessages();
+      if (Array.isArray(history)) {
+        setMessages(history);
+      }
+    } catch (err) {
+      console.error('Failed to fetch messages:', err);
+    }
+  }, []);
 
   // ── Auto-Purge Previously Saved Profiles on Startup ──
   useEffect(() => {
@@ -396,21 +432,43 @@ function App() {
   useEffect(() => {
     if (!currentUser) return;
 
+    let isSubscribed = true;
     const ping = async () => {
+      if (!isSubscribed) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       const res = await sendPresenceHeartbeat(currentUser);
-      if (res && Array.isArray(res.onlineUserIds)) {
+      if (isSubscribed && res && Array.isArray(res.onlineUserIds)) {
         setOnlineUsers(res.onlineUserIds);
       }
     };
 
     ping();
-    const heartbeatInterval = setInterval(ping, 4000);
+    const heartbeatInterval = setInterval(ping, 3000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined') {
+        if (document.visibilityState === 'hidden') {
+          if (currentUser?.id) sendPresenceLeave(currentUser.id);
+        } else if (document.visibilityState === 'visible') {
+          ping();
+          loadRegisteredUsers();
+        }
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
 
     return () => {
+      isSubscribed = false;
       clearInterval(heartbeatInterval);
-      sendPresenceLeave(currentUser.id);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+      if (currentUser?.id) sendPresenceLeave(currentUser.id);
     };
-  }, [currentUser]);
+  }, [currentUser, loadRegisteredUsers]);
 
   // Periodic health & latency check for live sync badge
   useEffect(() => {
@@ -455,16 +513,21 @@ function App() {
         if (u && u.id) {
           setRegisteredUsers(prev => {
             const idx = prev.findIndex(item => item.id === u.id);
+            let next;
             if (idx !== -1) {
               const copy = [...prev];
               copy[idx] = { ...copy[idx], ...u };
-              return copy;
+              next = copy;
+            } else {
+              next = [...prev, u];
             }
-            return [...prev, u];
+            saveOfflineUsersDB(next);
+            return next;
           });
         }
       } else if (event.type === 'users_updated' && Array.isArray(event.payload?.users)) {
         setRegisteredUsers(event.payload.users);
+        saveOfflineUsersDB(event.payload.users);
       } else if (event.type === 'presence' && event.payload) {
         if (Array.isArray(event.payload.onlineUserIds)) {
           setOnlineUsers(event.payload.onlineUserIds);
@@ -504,6 +567,7 @@ function App() {
         }));
       } else if (event.type === 'moment_deleted' && event.payload?.momentId) {
         const { momentId } = event.payload;
+        deleteStatus(momentId);
         setStatuses(prev => prev.filter(s => s.id !== momentId));
       }
     });
@@ -585,35 +649,6 @@ function App() {
       }
     }
   }, [allAvailableUsers, activeChatTarget]);
-
-  // Fetch registered users from backend
-  const loadRegisteredUsers = useCallback(async () => {
-    try {
-      const users = await fetchAllUsers();
-      if (Array.isArray(users)) {
-        setRegisteredUsers(prev => {
-          if (prev.length === users.length && JSON.stringify(prev) === JSON.stringify(users)) {
-            return prev;
-          }
-          return users;
-        });
-      }
-    } catch (err) {
-      console.error('Failed to fetch users:', err);
-    }
-  }, []);
-
-  // Fetch stored messages from backend
-  const loadStoredMessages = useCallback(async () => {
-    try {
-      const history = await fetchStoredMessages();
-      if (Array.isArray(history)) {
-        setMessages(history);
-      }
-    } catch (err) {
-      console.error('Failed to fetch messages:', err);
-    }
-  }, []);
 
   // Load users & messages on mount and poll periodically for dynamic sync
   useEffect(() => {
@@ -790,12 +825,15 @@ function App() {
 
   // ── Call Signaling & Handlers ──
   const handleSendCallSignal = useCallback((signalPayload) => {
-    broadcastCallSignal(signalPayload);
-    sendCallSignal(signalPayload);
-  }, []);
+    const payloadWithSender = { ...signalPayload, senderId: currentUser?.id };
+    broadcastCallSignal(payloadWithSender);
+    sendCallSignal(payloadWithSender);
+  }, [currentUser?.id]);
 
   const handleIncomingCallSignal = useCallback((signal) => {
     if (!signal || !currentUser) return;
+    // Reject self-echo signals
+    if (signal.senderId && String(signal.senderId) === String(currentUser.id)) return;
 
     if (signal.type === 'call_invite') {
       if (String(signal.recipientId) === String(currentUser.id)) {
@@ -860,7 +898,7 @@ function App() {
         callConnectTimeRef.current = null;
       }
     } else if (signal.type === 'offer' || signal.type === 'answer' || signal.type === 'ice_candidate') {
-      if (String(signal.targetId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+      if (String(signal.targetId) === String(currentUser.id)) {
         setLatestIncomingSignal(signal);
       }
     }
@@ -1026,12 +1064,16 @@ function App() {
   // Gate app behind Login Modal (No Excel or selenium buttons)
   if (!currentUser) {
     return (
-      <AuthModal onLogin={handleLogin} theme={theme} onToggleTheme={handleToggleTheme} />
+      <>
+        {showIntroSplash && <AppIntroSplash onComplete={() => setShowIntroSplash(false)} />}
+        <AuthModal onLogin={handleLogin} theme={theme} onToggleTheme={handleToggleTheme} skipSplash={true} />
+      </>
     );
   }
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[var(--bg-primary)] relative">
+      {showIntroSplash && <AppIntroSplash onComplete={() => setShowIntroSplash(false)} />}
 
       {/* ── Top Window Bar (Desktop - Image 2) ── */}
       <div className="hidden md:flex items-center justify-between px-4 py-2 bg-[#0a1218] border-b border-slate-800/80 z-30 shrink-0">

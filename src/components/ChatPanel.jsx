@@ -33,6 +33,7 @@ import { recordAction } from '../utils/testRecorder';
 import { analyzeUrl } from '../utils/linkDetector';
 import { broadcastTyping } from '../utils/realtimeChannel';
 import { searchUsers } from '../utils/api';
+import { formatChatHeaderStatus } from '../utils/timeFormat';
 
 const EMOJI_CATEGORIES = [
   {
@@ -334,14 +335,42 @@ export default function ChatPanel({
   }, []);
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
-        setSelectedImage(uploadEvent.target.result);
+        const rawResult = uploadEvent.target.result;
+        // If image is larger than 1.5MB, auto-compress via canvas for fast transmission
+        if (file.size > 1.5 * 1024 * 1024 && file.type.startsWith('image/')) {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1920;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            setSelectedImage(compressed);
+          };
+          img.src = rawResult;
+        } else {
+          setSelectedImage(rawResult);
+        }
       };
       reader.readAsDataURL(file);
     }
+    try { e.target.value = ''; } catch {}
   };
 
   const formatFileSize = (bytes) => {
@@ -352,7 +381,7 @@ export default function ChatPanel({
   };
 
   const handleAudioFileChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
@@ -364,10 +393,11 @@ export default function ChatPanel({
       };
       reader.readAsDataURL(file);
     }
+    try { e.target.value = ''; } catch {}
   };
 
   const handleVideoFileChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
@@ -379,10 +409,11 @@ export default function ChatPanel({
       };
       reader.readAsDataURL(file);
     }
+    try { e.target.value = ''; } catch {}
   };
 
   const handleDocumentFileChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
@@ -394,6 +425,7 @@ export default function ChatPanel({
       };
       reader.readAsDataURL(file);
     }
+    try { e.target.value = ''; } catch {}
   };
 
   // Camera Handler: Mobile opens device camera; Laptop/Desktop opens live webcam preview
@@ -655,12 +687,9 @@ export default function ChatPanel({
     return Math.max(1, count);
   }, [onlineUsers, allUsers, currentUser]);
 
-  // Real-time online presence check
+  // Real-time online presence check strictly based on live onlineUsers list
   const targetIsOnline = Boolean(
-    targetUser && (
-      (Array.isArray(onlineUsers) && onlineUsers.some(u => (typeof u === 'string' ? u === targetUser.id : u?.id === targetUser.id))) ||
-      Boolean(targetUser.isOnline)
-    )
+    targetUser && Array.isArray(onlineUsers) && onlineUsers.some(u => (typeof u === 'string' ? u === targetUser.id : u?.id === targetUser.id))
   );
 
   return (
@@ -722,7 +751,9 @@ export default function ChatPanel({
                   {targetIsOnline ? (
                     <span className="text-[#22c55e] font-medium">● Online</span>
                   ) : (
-                    <span className="text-slate-400">Offline</span>
+                    <span className="text-slate-400 font-medium">
+                      {formatChatHeaderStatus(targetUser, false)}
+                    </span>
                   )}
                 </p>
               </div>
@@ -1334,7 +1365,7 @@ export default function ChatPanel({
               type="file"
               ref={documentFileInputRef}
               onChange={handleDocumentFileChange}
-              accept=".pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.csv,application/pdf,application/msword,text/plain"
+              accept="*/*"
               className="hidden"
             />
             {/* Device Video File Input */}

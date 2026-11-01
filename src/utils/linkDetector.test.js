@@ -53,6 +53,34 @@ describe('SecureChat Fraud Link Detector', () => {
       expect(result.status).toBe('dangerous');
     });
 
+    it('flags embedded userinfo credentials in URL', () => {
+      const result = analyzeUrl('https://google.com@phishing-target.com/login');
+      expect(result.riskFactors.some(rf => rf.title.includes('Embedded Userinfo'))).toBe(true);
+      expect(result.status).toBe('dangerous');
+    });
+
+    it('flags dangerous executable and script download payloads', () => {
+      const result = analyzeUrl('https://download-bonus.com/update.apk');
+      expect(result.riskFactors.some(rf => rf.title.includes('Dangerous Payload'))).toBe(true);
+      expect(result.status).toBe('dangerous');
+    });
+
+    it('flags non-standard web ports', () => {
+      const result = analyzeUrl('http://login-server.org:8080/auth');
+      expect(result.riskFactors.some(rf => rf.title.includes('Non-Standard Port'))).toBe(true);
+    });
+
+    it('populates impactPercent and whyItIsRisk fields on all detected risk factors', () => {
+      const result = analyzeUrl('http://paypaI-security.xyz:8080/verify-account/payload.exe');
+      expect(result.riskFactors.length).toBeGreaterThan(0);
+      result.riskFactors.forEach(factor => {
+        expect(typeof factor.impactPercent).toBe('number');
+        expect(factor.impactPercent).toBeGreaterThan(0);
+        expect(typeof factor.whyItIsRisk).toBe('string');
+        expect(factor.whyItIsRisk.length).toBeGreaterThan(10);
+      });
+    });
+
     it('handles malformed URLs gracefully', () => {
       const result = analyzeUrl('htt://invalid-url');
       expect(result.isValid).toBe(false);

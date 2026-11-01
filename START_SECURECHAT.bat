@@ -27,9 +27,11 @@ if exist "%ADB_PATH%" (
         echo  [+] Android USB device detected! Setting up reverse port forwarding...
         "%ADB_PATH%" reverse tcp:3001 tcp:3001 >nul 2>&1
         "%ADB_PATH%" reverse tcp:5173 tcp:5173 >nul 2>&1
+        echo  [+] Auto-updating SecureChat app on connected Android phone...
+        "%ADB_PATH%" install -r -d "%PROJECT_DIR%\app-debug.apk"
         echo  [+] USB Port Forwarding Active: Mobile app connects via http://localhost:3001
     ) else (
-        echo  [-] No USB device detected. If testing on phone via USB, plug in USB and enable USB debugging.
+        echo  [-] No authorized USB device detected. If your phone shows 'Allow USB debugging?', tap Allow.
     )
 ) else (
     echo  [-] ADB not found. Skipping USB reverse port setup.

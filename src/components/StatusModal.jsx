@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Music, Image as ImageIcon, Type, Sparkles, Send, Volume2, Upload, Check } from 'lucide-react';
+import { X, Music, Image as ImageIcon, Video, Type, Sparkles, Send, Volume2, Upload, Check } from 'lucide-react';
 import { POPULAR_SONG_PRESETS, STATUS_BACKGROUND_GRADIENTS, createStatusUpdate } from '../utils/statusManager';
 import { recordAction } from '../utils/testRecorder';
 
@@ -14,7 +14,8 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
   const [mediaType, setMediaType] = useState('image'); // 'image' | 'video'
   const [isPreviewingAudio, setIsPreviewingAudio] = useState(false);
 
-  const mediaInputRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const videoInputRef = useRef(null);
   const audioInputRef = useRef(null);
   const audioPreviewRef = useRef(null);
 
@@ -54,7 +55,7 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
 
   // Handle photo or video upload from device
   const handleMediaFile = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     const isVid = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|3gp|mkv)$/i.test(file.name);
     const reader = new FileReader();
@@ -69,11 +70,12 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
       }
     };
     reader.readAsDataURL(file);
+    try { e.target.value = ''; } catch {}
   };
 
   // Handle custom song/audio upload from device
   const handleAudioFile = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -90,6 +92,7 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
       toggleAudioPreview(newCustomSong);
     };
     reader.readAsDataURL(file);
+    try { e.target.value = ''; } catch {}
   };
 
   const handleSubmit = (e) => {
@@ -105,6 +108,7 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
       userAvatar: currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
       type: activeTab === 'media' ? mediaType : 'text',
       text: textCaption.trim() || (selectedSong ? `🎵 ${selectedSong.title}` : ''),
+      timestamp: Date.now(),
       imageUrl: (activeTab === 'media' && mediaType === 'image') ? mediaPreview : null,
       videoUrl: (activeTab === 'media' && mediaType === 'video') ? mediaPreview : null,
       bgColor: selectedBgGradient,
@@ -175,7 +179,8 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
         </div>
 
         {/* Hidden inputs */}
-        <input ref={mediaInputRef} type="file" accept="image/*,video/*" onChange={handleMediaFile} className="hidden" />
+        <input ref={imageInputRef} type="file" accept="image/*" onChange={handleMediaFile} className="hidden" />
+        <input ref={videoInputRef} type="file" accept="video/*" onChange={handleMediaFile} className="hidden" />
         <input ref={audioInputRef} type="file" accept="audio/*" onChange={handleAudioFile} className="hidden" />
 
         {/* Scrollable Content Form */}
@@ -258,16 +263,24 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
             />
           </div>
 
-          {/* Media picker trigger button if media tab */}
+          {/* Media picker trigger buttons if media tab */}
           {activeTab === 'media' && (
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => mediaInputRef.current?.click()}
-                className="flex-1 py-2 px-3 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                onClick={() => imageInputRef.current?.click()}
+                className="flex-1 py-2 px-3 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
-                <Upload className="w-4 h-4" />
-                {mediaPreview ? (mediaType === 'video' ? 'Change Video' : 'Change Photo') : 'Upload Photo or Video'}
+                <ImageIcon className="w-4 h-4" />
+                <span>{mediaPreview && mediaType === 'image' ? 'Change Photo' : 'Upload Photo'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                className="flex-1 py-2 px-3 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <Video className="w-4 h-4" />
+                <span>{mediaPreview && mediaType === 'video' ? 'Change Video' : 'Upload Video'}</span>
               </button>
             </div>
           )}

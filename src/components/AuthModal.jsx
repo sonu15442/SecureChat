@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AppIntroSplash from './AppIntroSplash';
 import {
   ShieldCheck,
   Mail,
@@ -21,7 +22,10 @@ import {
   AlertCircle,
   Sparkles,
   Check,
-  Clipboard
+  Clipboard,
+  Lock,
+  Fingerprint,
+  Cpu
 } from 'lucide-react';
 import { registerUser, loginUser, sendPasswordResetOtp, verifyOtpAndResetPassword, resetPassword, checkEmailExists, checkDisplayNameExists } from '../utils/api';
 import { recordAction } from '../utils/testRecorder';
@@ -154,27 +158,7 @@ function validateGmailAccount(val) {
 
 export default function AuthModal({ onLogin, theme = 'light', onToggleTheme, skipSplash = false }) {
   const isTest = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
-  // Opening splash sequence with SecureChat logo and branding animation
   const [showSplash, setShowSplash] = useState(skipSplash ? false : !isTest);
-  const [splashFading, setSplashFading] = useState(false);
-
-  useEffect(() => {
-    const fadeTimer = setTimeout(() => {
-      setSplashFading(true);
-    }, 1800);
-    const endTimer = setTimeout(() => {
-      setShowSplash(false);
-    }, 2200);
-    return () => {
-      clearTimeout(fadeTimer);
-      clearTimeout(endTimer);
-    };
-  }, []);
-
-  const handleDismissSplash = () => {
-    setSplashFading(true);
-    setTimeout(() => setShowSplash(false), 200);
-  };
 
   // Tab: 'login' | 'register' | 'forgot'
   const [activeTab, setActiveTab] = useState('login');
@@ -559,62 +543,7 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme, ski
   const isLight = theme === 'light';
 
   if (showSplash) {
-    return (
-      <div
-        id="securechat-opening-splash"
-        onClick={handleDismissSplash}
-        className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-gradient-to-b from-[#090d12] via-[#0d161d] to-[#04070a] select-none cursor-pointer transition-all duration-300 ${
-          splashFading ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
-        }`}
-      >
-        {/* Ambient Glow Aura */}
-        <div className="absolute w-96 h-96 rounded-full bg-[#f97316]/20 blur-[100px] pointer-events-none animate-pulse" />
-        <div className="absolute w-64 h-64 rounded-full bg-amber-500/15 blur-[80px] pointer-events-none" />
-
-        {/* Center Animated Logo & Emblem */}
-        <div className="relative flex flex-col items-center justify-center z-10 space-y-6">
-          <div className="relative">
-            {/* Pulsing Concentric Ripple Rings */}
-            <div className="absolute -inset-4 rounded-3xl border border-[#f97316]/40 animate-ping opacity-50" />
-            <div className="absolute -inset-8 rounded-full border border-amber-500/20 animate-pulse opacity-40" />
-
-            {/* Shield Emblem Container */}
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-br from-[#f97316] via-[#ea580c] to-[#9a3412] p-1 shadow-[0_0_50px_rgba(249,115,22,0.5)] flex items-center justify-center transform transition-transform hover:scale-105">
-              <div className="w-full h-full rounded-[22px] bg-[#0d161d]/90 flex items-center justify-center backdrop-blur-sm border border-[#f97316]/30">
-                <ShieldCheck className="w-12 h-12 sm:w-14 sm:h-14 text-[#f97316] drop-shadow-[0_0_15px_rgba(249,115,22,0.8)] animate-bounce" />
-              </div>
-            </div>
-          </div>
-
-          {/* SecureChat Typography & Branding */}
-          <div className="text-center space-y-2">
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-orange-400 via-amber-200 to-orange-500 bg-clip-text text-transparent drop-shadow-sm">
-              SecureChat
-            </h1>
-            <div className="flex items-center justify-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-xs font-mono font-bold tracking-widest text-emerald-400/90 uppercase">
-                End-To-End Encrypted
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto">
-              Private, zero-knowledge peer-to-peer messaging & calls
-            </p>
-          </div>
-
-          {/* Loading Animation Indicator */}
-          <div className="flex items-center gap-2 pt-4">
-            <div className="w-2 h-2 rounded-full bg-[#f97316] animate-bounce [animation-delay:-0.3s]" />
-            <div className="w-2 h-2 rounded-full bg-amber-400 animate-bounce [animation-delay:-0.15s]" />
-            <div className="w-2 h-2 rounded-full bg-[#f97316] animate-bounce" />
-          </div>
-
-          <span className="text-[11px] text-slate-500 hover:text-slate-400 pt-2 transition">
-            Tap anywhere to enter
-          </span>
-        </div>
-      </div>
-    );
+    return <AppIntroSplash onComplete={() => setShowSplash(false)} />;
   }
 
   return (

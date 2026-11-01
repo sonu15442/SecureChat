@@ -9,13 +9,27 @@ import {
 } from '../utils/callAudio';
 import { recordAction } from '../utils/testRecorder';
 import { on } from '../utils/realtimeChannel';
+import { syncCallSignals } from '../utils/api';
 
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
-  ]
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    {
+      urls: [
+        'turn:standard.relay.metered.ca:80',
+        'turn:standard.relay.metered.ca:443',
+        'turn:standard.relay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 export default function VideoCallModal({
@@ -39,6 +53,9 @@ export default function VideoCallModal({
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const remoteAudioCtxRef = useRef(null);
+  const remoteGainRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
@@ -47,6 +64,7 @@ export default function VideoCallModal({
   const hasSentOfferRef = useRef(false);
   const pendingOfferRef = useRef(null);
   const pendingAnswerRef = useRef(null);
+  const processedSignalsRef = useRef(new Set());
 
   // 1. Ringing sound if outgoing
   useEffect(() => {
@@ -63,11 +81,89 @@ export default function VideoCallModal({
   useEffect(() => {
     if (call?.status && call.status !== callStatus) {
       if (call.status === 'connected' && callStatus === 'ringing') {
+        stopAllRingtones();
         playConnectedChime();
       }
       setCallStatus(call.status);
     }
   }, [call?.status, callStatus]);
+
+  // Caller active polling sync during ringing guarantees ringtone stops immediately when Callee picks up
+  useEffect(() => {
+    if (isCaller && callStatus === 'ringing') {
+      let lastCheck = Date.now() - 10000;
+      const pollTimer = setInterval(async () => {
+        if (callStatus !== 'ringing') {
+          clearInterval(pollTimer);
+          return;
+        }
+        try {
+          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
+          if (res) {
+            lastCheck = res.serverTime || Date.now();
+            if (res.status === 'connected' || (res.signals && res.signals.some(s => s.type === 'call_accepted'))) {
+              stopAllRingtones();
+              setCallStatus('connected');
+              playConnectedChime();
+              sendOffer();
+            } else if (res.status === 'ended' || (res.signals && res.signals.some(s => s.type === 'call_reject' || s.type === 'call_end' || s.type === 'call_cancel'))) {
+              stopAllRingtones();
+              handleEndCallAction();
+            }
+          }
+        } catch {}
+      }, 400);
+      return () => clearInterval(pollTimer);
+    }
+  }, [isCaller, callStatus, call.callId, targetUser?.id]);
+
+  // Callee retry for call_accepted until offer arrives
+  useEffect(() => {
+    if (!isCaller && callStatus === 'connected' && !pcRef.current?.remoteDescription) {
+      let attempts = 0;
+      const retryTimer = setInterval(() => {
+        attempts++;
+        if (pcRef.current?.remoteDescription || attempts > 5) {
+          clearInterval(retryTimer);
+          return;
+        }
+        if (onSendSignal) {
+          onSendSignal({
+            type: 'call_accepted',
+            callId: call.callId,
+            recipientId: targetUser.id,
+            targetId: targetUser.id
+          });
+        }
+      }, 600);
+      return () => clearInterval(retryTimer);
+    }
+  }, [isCaller, callStatus, call.callId, targetUser?.id]);
+
+  // Periodic signal polling fallback during WebRTC handshake
+  useEffect(() => {
+    if (callStatus === 'connected') {
+      let lastCheck = Date.now() - 5000;
+      const syncTimer = setInterval(async () => {
+        const pc = pcRef.current;
+        if (!pc || pc.connectionState === 'connected') {
+          return;
+        }
+        try {
+          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
+          if (res && Array.isArray(res.signals)) {
+            lastCheck = res.serverTime || Date.now();
+            for (const sig of res.signals) {
+              if (sig && sig.callId === call.callId) {
+                handleSignal(sig);
+              }
+            }
+          }
+        } catch {}
+      }, 500);
+      return () => clearInterval(syncTimer);
+    }
+  }, [callStatus, call.callId, targetUser?.id]);
 
   // Ensure caller automatically creates offer once call transitions to connected
   useEffect(() => {
@@ -89,7 +185,16 @@ export default function VideoCallModal({
 
     async function initWebRTC() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          });
+        } catch (err1) {
+          console.warn('[WebRTC Video] Advanced constraints failed, trying basic audio/video:', err1);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        }
         if (cancelled) {
           stream.getTracks().forEach(t => t.stop());
           return;
@@ -108,28 +213,46 @@ export default function VideoCallModal({
           pc.addTrack(track, stream);
         });
 
-        // Remote track arrival (audio + video from peer)
+        // Remote track arrival (accumulate both audio + video from peer without overwriting)
         pc.ontrack = (event) => {
-          const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-          remoteStreamRef.current = stream;
+          if (!remoteStreamRef.current) {
+            remoteStreamRef.current = new MediaStream();
+          }
+          if (!remoteStreamRef.current.getTracks().some(t => t.id === event.track.id)) {
+            remoteStreamRef.current.addTrack(event.track);
+          }
+          if (event.streams && event.streams[0]) {
+            event.streams[0].getTracks().forEach(t => {
+              if (!remoteStreamRef.current.getTracks().some(ex => ex.id === t.id)) {
+                remoteStreamRef.current.addTrack(t);
+              }
+            });
+          }
+
           if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = stream;
+            remoteVideoRef.current.srcObject = remoteStreamRef.current;
             remoteVideoRef.current.muted = false;
             remoteVideoRef.current.volume = 1.0;
             const p = remoteVideoRef.current.play();
             if (p !== undefined) p.catch(() => {});
           }
-          // Direct WebAudio route for audio track playback
-          try {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (AudioCtx && event.track.kind === 'audio') {
-              const rCtx = new AudioCtx();
-              if (rCtx.state === 'suspended') rCtx.resume();
-              const rSource = rCtx.createMediaStreamSource(new MediaStream([event.track]));
-              rSource.connect(rCtx.destination);
+
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = remoteStreamRef.current;
+            remoteAudioRef.current.muted = false;
+            remoteAudioRef.current.volume = 1.0;
+            const pAudio = remoteAudioRef.current.play();
+            if (pAudio !== undefined) {
+              pAudio.catch(() => {
+                const resumeAudio = () => {
+                  if (remoteAudioRef.current) remoteAudioRef.current.play().catch(() => {});
+                  window.removeEventListener('click', resumeAudio);
+                  window.removeEventListener('touchstart', resumeAudio);
+                };
+                window.addEventListener('click', resumeAudio);
+                window.addEventListener('touchstart', resumeAudio);
+              });
             }
-          } catch (e) {
-            console.warn('WebAudio video call audio error:', e);
           }
         };
 
@@ -194,7 +317,16 @@ export default function VideoCallModal({
     }
     try {
       hasSentOfferRef.current = true;
-      const offer = await pc.createOffer();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          track.enabled = track.kind === 'audio' ? !isMuted : isVideoOn;
+          const senders = pc.getSenders ? pc.getSenders() : [];
+          if (!senders.some(s => s.track && s.track.id === track.id)) {
+            pc.addTrack(track, localStreamRef.current);
+          }
+        });
+      }
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await pc.setLocalDescription(offer);
       if (onSendSignal) {
         onSendSignal({
@@ -223,6 +355,12 @@ export default function VideoCallModal({
 
   const handleSignal = async (signal) => {
     if (!signal || signal.callId !== call.callId) return;
+    if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
+
+    const sigKey = `${signal.type}_${signal.timestamp || ''}_${signal.candidate?.candidate || ''}_${signal.sdp?.sdp?.slice(0, 30) || ''}`;
+    if (processedSignalsRef.current.has(sigKey)) return;
+    processedSignalsRef.current.add(sigKey);
+
     const pc = pcRef.current;
 
     try {
@@ -244,7 +382,17 @@ export default function VideoCallModal({
         playConnectedChime();
         processQueuedSignals();
 
-        const answer = await pc.createAnswer();
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(track => {
+            track.enabled = track.kind === 'audio' ? !isMuted : isVideoOn;
+            const senders = pc.getSenders ? pc.getSenders() : [];
+            if (!senders.some(s => s.track && s.track.id === track.id)) {
+              pc.addTrack(track, localStreamRef.current);
+            }
+          });
+        }
+
+        const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
         await pc.setLocalDescription(answer);
         if (onSendSignal) {
           onSendSignal({
@@ -372,6 +520,13 @@ export default function VideoCallModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
+      {/* Remote Audio Output Element for guaranteed voice clarity */}
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        style={{ position: 'fixed', top: '-9000px', left: '-9000px', width: '1px', height: '1px', opacity: 0.01, pointerEvents: 'none' }}
+      />
       <div className="w-full max-w-4xl rounded-3xl overflow-hidden border border-orange-500/30 bg-[#060b0e] shadow-2xl flex flex-col h-[650px] relative">
         
         {/* Call Header Overlay */}

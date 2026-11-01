@@ -9,10 +9,16 @@ files_to_sync = [
     'src/components/StatusModal.jsx',
     'src/components/StatusViewerModal.jsx',
     'src/components/Sidebar.jsx',
+    'src/components/AppIntroSplash.jsx',
+    'src/components/LinkRiskModal.jsx',
     'src/utils/linkDetector.js',
     'src/utils/api.js',
     'src/utils/statusManager.js',
     'src/utils/realtimeChannel.js',
+    'src/utils/timeFormat.js',
+    'src/utils/callAudio.js',
+    'src/utils/messagesDb.js',
+    'src/utils/momentsDb.js',
     'src/App.jsx'
 ]
 

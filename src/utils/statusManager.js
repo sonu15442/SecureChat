@@ -4,6 +4,7 @@
  */
 
 import { createMomentApi, getMomentsApi, viewMomentApi, deleteMomentApi } from './api';
+import { saveMomentToDb, saveMomentsToDb, getAllMomentsFromDb, deleteMomentFromDb } from './momentsDb';
 
 const STATUS_STORAGE_KEY = 'securechat_statuses';
 
@@ -72,12 +73,47 @@ export const STATUS_BACKGROUND_GRADIENTS = [
 // In-memory fallback store to ensure statuses never fail even if LocalStorage hits quota limits
 let inMemoryStatuses = [];
 
+// Hydrate statuses from IndexedDB asynchronously on load to restore full video and image media
+if (typeof window !== 'undefined') {
+  getAllMomentsFromDb().then(dbMoments => {
+    if (Array.isArray(dbMoments) && dbMoments.length > 0) {
+      const combinedMap = new Map();
+      inMemoryStatuses.forEach(s => combinedMap.set(s.id, s));
+      
+      dbMoments.forEach(dbS => {
+        if (!dbS || !dbS.id) return;
+        const existing = combinedMap.get(dbS.id);
+        if (!existing) {
+          combinedMap.set(dbS.id, dbS);
+        } else {
+          // Restore videoUrl and imageUrl if memory or localStorage had lost them
+          combinedMap.set(dbS.id, {
+            ...existing,
+            ...dbS,
+            videoUrl: existing.videoUrl || dbS.videoUrl,
+            imageUrl: existing.imageUrl || dbS.imageUrl,
+            views: Array.from(new Set([...(existing.views || []), ...(dbS.views || [])]))
+          });
+        }
+      });
+
+      inMemoryStatuses = Array.from(combinedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+      window.dispatchEvent(new CustomEvent('securechat_moments_hydrated'));
+    }
+  }).catch(() => {});
+}
+
 function safePersistStatuses(statuses) {
+  // 1. Always persist full media to IndexedDB (virtually unlimited quota for videos & photos)
+  saveMomentsToDb(statuses).catch(() => {});
+
+  // 2. Try saving to LocalStorage as quick cache
   try {
     localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(statuses));
   } catch (err) {
     try {
       // If large base64 media exceeds localStorage quota, save metadata with light media references
+      // NOTE: IndexedDB and inMemoryStatuses still preserve full videoUrl!
       const light = statuses.map(s => {
         const isHugeVideo = typeof s.videoUrl === 'string' && s.videoUrl.length > 200000;
         const isHugeImage = typeof s.imageUrl === 'string' && s.imageUrl.length > 300000;
@@ -105,13 +141,24 @@ export function getActiveStatuses() {
     const localAll = raw ? JSON.parse(raw) : [];
     
     // Combine local storage and in-memory statuses, deduplicating by ID
+    // Always preserve videoUrl and imageUrl from inMemoryStatuses if localAll was stripped
     const combinedMap = new Map();
-    [...inMemoryStatuses, ...localAll].forEach(s => {
+    [...localAll, ...inMemoryStatuses].forEach(s => {
       if (!s || !s.id) return;
       const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
-      // Keep moment for full 24 hours (86,400,000 ms)
       if (!isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS) {
-        combinedMap.set(s.id, { ...s, timestamp: ts });
+        const existing = combinedMap.get(s.id);
+        if (!existing) {
+          combinedMap.set(s.id, { ...s, timestamp: ts });
+        } else {
+          combinedMap.set(s.id, {
+            ...existing,
+            ...s,
+            videoUrl: s.videoUrl || existing.videoUrl,
+            imageUrl: s.imageUrl || existing.imageUrl,
+            timestamp: ts
+          });
+        }
       }
     });
 
@@ -141,28 +188,55 @@ export function getActiveStatuses() {
 }
 
 /**
- * Sync statuses from backend server (enables cross-device Moments visibility)
+ * Sync statuses from backend server (enables cross-device Moments visibility & deletion sync)
  */
 export async function syncStatusesFromBackend() {
+  const now = Date.now();
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
   try {
     const serverMoments = await getMomentsApi();
     if (Array.isArray(serverMoments)) {
-      const now = Date.now();
-      const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-      const combinedMap = new Map();
-      
-      // Existing local & in-memory
-      getActiveStatuses().forEach(s => combinedMap.set(s.id, s));
-      // Merge server moments
-      serverMoments.forEach(s => {
-        if (!s || !s.id) return;
-        const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
-        if (!isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS) {
-          combinedMap.set(s.id, { ...combinedMap.get(s.id), ...s, timestamp: ts });
+      const serverIds = new Set(serverMoments.map(m => m.id));
+      const localActive = getActiveStatuses();
+      const localMap = new Map();
+      localActive.forEach(s => localMap.set(s.id, s));
+
+      // 1. Identify moments that were deleted on the server and purge them locally
+      localActive.forEach(loc => {
+        // If not on server and not brand new in-flight local moment (>15s old), it was deleted!
+        if (!serverIds.has(loc.id) && (now - loc.timestamp) > 15000) {
+          deleteMomentFromDb(loc.id).catch(() => {});
         }
       });
 
-      const merged = Array.from(combinedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+      // 2. Build the synced moments list from serverMoments
+      const merged = serverMoments
+        .filter(s => {
+          if (!s || !s.id) return false;
+          const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
+          return !isNaN(ts) && (now - ts) < TWENTY_FOUR_HOURS;
+        })
+        .map(s => {
+          const localMatch = localMap.get(s.id);
+          const ts = typeof s.timestamp === 'number' ? s.timestamp : new Date(s.timestamp).getTime();
+          return {
+            ...localMatch,
+            ...s,
+            videoUrl: s.videoUrl || localMatch?.videoUrl,
+            imageUrl: s.imageUrl || localMatch?.imageUrl,
+            timestamp: ts
+          };
+        });
+
+      // Also retain in-flight brand-new local moments created in last 15 seconds
+      localActive.forEach(loc => {
+        if (!serverIds.has(loc.id) && (now - loc.timestamp) <= 15000 && (now - loc.timestamp) < TWENTY_FOUR_HOURS) {
+          merged.push(loc);
+        }
+      });
+
+      merged.sort((a, b) => b.timestamp - a.timestamp);
       inMemoryStatuses = merged;
       safePersistStatuses(merged);
       return merged;
@@ -176,17 +250,24 @@ export async function syncStatusesFromBackend() {
  */
 export function createStatusUpdate(statusData) {
   const existing = getActiveStatuses();
+  const deviceTimestamp = (statusData && typeof statusData.timestamp === 'number' && !isNaN(statusData.timestamp))
+    ? statusData.timestamp
+    : Date.now();
+
   const newStatus = {
     id: 'status_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-    timestamp: Date.now(),
+    timestamp: deviceTimestamp,
     views: [], // Author is NEVER in viewers list
     ...statusData
   };
+  // Ensure timestamp is always the exact device timestamp
+  newStatus.timestamp = deviceTimestamp;
   
   // Add to memory list
   inMemoryStatuses = [newStatus, ...existing.filter(s => s.id !== newStatus.id)];
 
-  // Safely persist to LocalStorage (with memory store fallback)
+  // Immediately persist to IndexedDB and LocalStorage
+  saveMomentToDb(newStatus).catch(() => {});
   safePersistStatuses(inMemoryStatuses);
 
   // Broadcast & persist to backend server immediately so all devices see it and stay for 24 hours
@@ -216,11 +297,7 @@ export function markStatusAsViewed(statusId, userId) {
 
   if (modified) {
     inMemoryStatuses = updated;
-    try {
-      localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(updated));
-    } catch {
-      // Memory store is active
-    }
+    safePersistStatuses(updated);
     viewMomentApi(statusId, userId).catch(() => {});
   }
   return updated;
@@ -235,6 +312,7 @@ export function deleteStatus(statusId) {
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
   inMemoryStatuses = inMemoryStatuses.filter(s => s.id !== statusId);
+  deleteMomentFromDb(statusId).catch(() => {});
 
   try {
     const raw = localStorage.getItem(STATUS_STORAGE_KEY);

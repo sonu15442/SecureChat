@@ -1,5 +1,6 @@
 import { BACKEND_URL } from '../config/api';
 import { DEFAULT_SAVED_USERS } from './initialData';
+import { saveMessageToDb, saveMessagesToDb, getAllMessagesFromDb, clearMessagesFromDb as clearIndexedDbMessages } from './messagesDb';
 
 /**
  * Get API endpoints to try in order of priority
@@ -7,20 +8,17 @@ import { DEFAULT_SAVED_USERS } from './initialData';
 function getApiCandidates() {
   const candidates = [];
 
-  // Check if a custom server IP was configured in Settings (e.g. for phone on WiFi)
-  try {
-    const customServer = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_custom_server') : null;
-    if (customServer && customServer.trim()) {
-      const cleanCustom = customServer.trim().replace(/\/+$/, '');
-      candidates.push(cleanCustom.endsWith('/api') ? cleanCustom : `${cleanCustom}/api`);
-    }
-  } catch {}
-
+  // 1. USB reverse port forwarding & local dev endpoints (Instant connection when connected via USB or running locally)
   if (typeof window !== 'undefined') {
     const origin = window.location.origin || '';
     const hostname = window.location.hostname || '';
     
-    // In browser on localhost or local IP
+    candidates.push('http://localhost:3001/api');
+    candidates.push('http://127.0.0.1:3001/api');
+    candidates.push('http://10.101.25.35:3001/api');
+    candidates.push('http://10.0.2.2:3001/api');
+
+    // In web browser
     if (!origin.includes('capacitor')) {
       candidates.push('/api');
     }
@@ -29,16 +27,24 @@ function getApiCandidates() {
       candidates.push(`http://${hostname}:3001/api`);
       candidates.push(`http://${hostname}:5173/api`);
     }
-    candidates.push('http://localhost:3001/api');
-    candidates.push('http://127.0.0.1:3001/api');
-    // Laptop host IPv4 on local Wi-Fi for direct Mobile connectivity
-    candidates.push('http://10.101.25.35:3001/api');
-    candidates.push('http://10.31.154.35:3001/api');
-    candidates.push('http://10.223.64.151:3001/api');
-    candidates.push('http://10.216.93.35:3001/api');
-    // Standard Android emulator loopback to host PC
-    candidates.push('http://10.0.2.2:3001/api');
   }
+
+  // 2. Custom server IP configured in Settings (e.g. for phone on WiFi)
+  try {
+    const customServer = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_custom_server') : null;
+    if (customServer && customServer.trim()) {
+      const cleanCustom = customServer.trim().replace(/\/+$/, '');
+      candidates.push(cleanCustom.endsWith('/api') ? cleanCustom : `${cleanCustom}/api`);
+    }
+  } catch {}
+
+  // 3. Last known working server
+  try {
+    const lastActive = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_last_active_server') : null;
+    if (lastActive && lastActive.trim()) {
+      candidates.push(lastActive.trim());
+    }
+  } catch {}
 
   if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL) {
     const clean = BACKEND_URL.endsWith('/api') ? BACKEND_URL : `${BACKEND_URL}/api`;
@@ -55,9 +61,13 @@ function getApiCandidates() {
 async function fetchWithFallback(endpoint, options = {}) {
   const candidates = getApiCandidates();
   let lastError = null;
-  const timeoutMs = typeof options.timeout === 'number' ? options.timeout : 10000;
 
   for (const base of candidates) {
+    // Responsive timeout: 3s for local network probes, longer for cloud backend or explicit options
+    const isCloud = base.includes('onrender.com') || base.includes('https://');
+    const defaultTimeout = isCloud ? 6000 : 2500;
+    const timeoutMs = typeof options.timeout === 'number' ? options.timeout : defaultTimeout;
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -69,6 +79,12 @@ async function fetchWithFallback(endpoint, options = {}) {
       });
       clearTimeout(timeoutId);
       const data = await safeParseResponse(res);
+      // Remember working server for instant future requests
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('securechat_last_active_server', base);
+        }
+      } catch {}
       return { res, data };
     } catch (err) {
       clearTimeout(timeoutId);
@@ -85,11 +101,13 @@ async function fetchWithFallback(endpoint, options = {}) {
 async function safeParseResponse(res) {
   const text = await res.text();
   if (!text || text.trim() === '') {
-    throw new Error('BACKEND_OFFLINE');
+    if (res.ok) return {};
+    throw new Error(res.statusText || 'BACKEND_OFFLINE');
   }
   try {
     return JSON.parse(text);
   } catch {
+    if (res.ok) return {};
     throw new Error('BACKEND_OFFLINE');
   }
 }
@@ -107,17 +125,25 @@ export function getOfflineUsersDB() {
       localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
       return [];
     }
-    // Filter out any legacy dummy mock accounts (Alice, Bob, Charlie, Rohan, Arjun, etc.)
-    const filtered = parsed.filter(u =>
-      u &&
-      u.id &&
-      !u.id.includes('demo') &&
-      u.email !== 'alice@example.com' &&
-      u.email !== 'bob@example.com' &&
-      u.id !== 'user_1788422525931_wlrz' &&
-      u.id !== 'user_arjun_s_' &&
-      u.id !== 'user_arjun'
-    );
+    // Filter out any legacy dummy mock accounts and sanitize presence
+    const filtered = parsed
+      .filter(u =>
+        u &&
+        u.id &&
+        !u.id.includes('demo') &&
+        u.email !== 'alice@example.com' &&
+        u.email !== 'bob@example.com' &&
+        u.id !== 'user_1788422525931_wlrz' &&
+        u.id !== 'user_arjun_s_' &&
+        u.id !== 'user_arjun'
+      )
+      .map(u => ({
+        ...u,
+        isOnline: false,
+        lastSeen: (u.lastSeen && u.lastSeen !== 'Online' && u.lastSeen !== 'Offline')
+          ? u.lastSeen
+          : (u.updatedAt || u.createdAt || new Date().toISOString())
+      }));
     localStorage.setItem('securechat_all_users_db', JSON.stringify(filtered));
     return filtered;
   } catch {
@@ -128,16 +154,24 @@ export function getOfflineUsersDB() {
 export function saveOfflineUsersDB(users) {
   try {
     const cleanUsers = Array.isArray(users)
-      ? users.filter(u =>
-          u &&
-          u.id &&
-          !u.id.includes('demo') &&
-          u.email !== 'alice@example.com' &&
-          u.email !== 'bob@example.com' &&
-          u.id !== 'user_1788422525931_wlrz' &&
-          u.id !== 'user_arjun_s_' &&
-          u.id !== 'user_arjun'
-        )
+      ? users
+          .filter(u =>
+            u &&
+            u.id &&
+            !u.id.includes('demo') &&
+            u.email !== 'alice@example.com' &&
+            u.email !== 'bob@example.com' &&
+            u.id !== 'user_1788422525931_wlrz' &&
+            u.id !== 'user_arjun_s_' &&
+            u.id !== 'user_arjun'
+          )
+          .map(u => ({
+            ...u,
+            isOnline: false, // In offline cache, presence starts as false until verified
+            lastSeen: (u.lastSeen && u.lastSeen !== 'Online' && u.lastSeen !== 'Offline')
+              ? u.lastSeen
+              : (u.updatedAt || u.createdAt || new Date().toISOString())
+          }))
       : [];
     localStorage.setItem('securechat_all_users_db', JSON.stringify(cleanUsers));
   } catch (e) {
@@ -195,6 +229,14 @@ export function initRealtimeEventStream(onEvent) {
       const es = new EventSource(streamUrl);
       sseSource = es;
 
+      es.onopen = () => {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('securechat_last_active_server', base);
+          }
+        } catch {}
+      };
+
       es.onmessage = (e) => {
         try {
           const parsed = JSON.parse(e.data);
@@ -203,16 +245,20 @@ export function initRealtimeEventStream(onEvent) {
       };
 
       es.onerror = () => {
+        if (es.readyState === EventSource.CONNECTING) {
+          // Browser is auto-reconnecting; keep socket alive
+          return;
+        }
         es.close();
         candidateIndex++;
         if (candidateIndex < candidates.length) {
           connect();
         } else {
-          // Reset and retry first candidate after 5s
+          // Reset and retry first candidate after 2s
           setTimeout(() => {
             candidateIndex = 0;
             connect();
-          }, 5000);
+          }, 2000);
         }
       };
     } catch {
@@ -667,47 +713,27 @@ export async function sendPresenceLeave(userId) {
  * Fetch all registered users
  */
 export async function fetchAllUsers() {
-  // Attempt to sync all offline registered users from local storage to backend database
-  try {
-    const saved = localStorage.getItem('securechat_user');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && parsed.id) {
-        syncUserWithBackend(parsed);
-      }
-    }
-    // Also push any pending offline saved users to ensure mobile -> laptop persistence
-    const localUsers = getOfflineUsersDB();
-    if (localUsers.length > 0) {
-      for (const u of localUsers) {
-        if (u && u.id && u.name) {
-          syncUserWithBackend(u);
-        }
-      }
-    }
-  } catch {
-    // Ignore JSON errors
-  }
-
   try {
     const { res, data } = await fetchWithFallback('/users');
 
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to fetch users.');
+      throw new Error(data?.error || 'Failed to fetch users.');
     }
 
-    const remoteUsers = data.users || [];
-    const localUsers = getOfflineUsersDB();
-
-    // Merge remote users with local offline database
-    const map = new Map();
-    localUsers.forEach(u => { if (u && u.id) map.set(u.id, u); });
-    remoteUsers.forEach(u => { if (u && u.id) map.set(u.id, { ...map.get(u.id), ...u }); });
-    const merged = Array.from(map.values());
-    saveOfflineUsersDB(merged);
-    return merged;
+    const remoteUsers = Array.isArray(data?.users) ? data.users : [];
+    const onlineIds = Array.isArray(data?.onlineUserIds) ? data.onlineUserIds : [];
+    if (remoteUsers.length > 0) {
+      saveOfflineUsersDB(remoteUsers);
+      remoteUsers.onlineUserIds = onlineIds;
+      return remoteUsers;
+    }
+    const off = getOfflineUsersDB();
+    off.onlineUserIds = onlineIds;
+    return off;
   } catch {
-    return getOfflineUsersDB();
+    const off = getOfflineUsersDB();
+    off.onlineUserIds = [];
+    return off;
   }
 }
 
@@ -720,6 +746,29 @@ export async function fetchStoredMessages() {
     localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
   } catch {}
 
+  // Hydrate full media attachments (videos, documents, photos) from IndexedDB
+  try {
+    const idbMsgs = await getAllMessagesFromDb();
+    if (Array.isArray(idbMsgs) && idbMsgs.length > 0) {
+      const mergedMap = new Map();
+      localMsgs.forEach(m => { if (m && m.id) mergedMap.set(m.id, m); });
+      idbMsgs.forEach(m => {
+        if (m && m.id) {
+          const ex = mergedMap.get(m.id);
+          mergedMap.set(m.id, {
+            ...ex,
+            ...m,
+            imageUrl: m.imageUrl || ex?.imageUrl,
+            videoUrl: m.videoUrl || ex?.videoUrl,
+            audioUrl: m.audioUrl || ex?.audioUrl,
+            documentUrl: m.documentUrl || ex?.documentUrl
+          });
+        }
+      });
+      localMsgs = Array.from(mergedMap.values());
+    }
+  } catch {}
+
   try {
     const { res, data } = await fetchWithFallback('/messages');
 
@@ -729,11 +778,35 @@ export async function fetchStoredMessages() {
       data.messages.forEach(m => {
         if (m && m.id) {
           const existing = msgMap.get(m.id);
-          msgMap.set(m.id, { ...existing, ...m });
+          msgMap.set(m.id, {
+            ...existing,
+            ...m,
+            imageUrl: m.imageUrl || existing?.imageUrl,
+            videoUrl: m.videoUrl || existing?.videoUrl,
+            audioUrl: m.audioUrl || existing?.audioUrl,
+            documentUrl: m.documentUrl || existing?.documentUrl
+          });
         }
       });
       const merged = Array.from(msgMap.values());
-      localStorage.setItem('securechat_all_messages', JSON.stringify(merged));
+      // Save full messages to IndexedDB (unlimited quota)
+      saveMessagesToDb(merged).catch(() => {});
+      
+      // Save to localStorage with fallback for light metadata
+      try {
+        localStorage.setItem('securechat_all_messages', JSON.stringify(merged));
+      } catch {
+        try {
+          const light = merged.map(m => ({
+            ...m,
+            imageUrl: typeof m.imageUrl === 'string' && m.imageUrl.length > 200000 ? null : m.imageUrl,
+            videoUrl: typeof m.videoUrl === 'string' && m.videoUrl.length > 200000 ? null : m.videoUrl,
+            audioUrl: typeof m.audioUrl === 'string' && m.audioUrl.length > 200000 ? null : m.audioUrl,
+            documentUrl: typeof m.documentUrl === 'string' && m.documentUrl.length > 200000 ? null : m.documentUrl
+          }));
+          localStorage.setItem('securechat_all_messages', JSON.stringify(light));
+        } catch {}
+      }
       return merged;
     }
   } catch {
@@ -749,6 +822,10 @@ export async function fetchStoredMessages() {
 export async function saveStoredMessage(message) {
   if (!message || !message.id) return;
 
+  // 1. Save full message (with full video/audio/document/photo base64) to IndexedDB
+  saveMessageToDb(message).catch(() => {});
+
+  // 2. Cache in localStorage safely
   try {
     const localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
     const existingIdx = localMsgs.findIndex(m => m.id === message.id);
@@ -759,9 +836,27 @@ export async function saveStoredMessage(message) {
     }
     localStorage.setItem('securechat_all_messages', JSON.stringify(localMsgs));
   } catch (e) {
-    console.error('LocalStorage message save error:', e);
+    try {
+      // If full payload exceeds localStorage quota, save light representation
+      const localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
+      const lightMsg = {
+        ...message,
+        imageUrl: typeof message.imageUrl === 'string' && message.imageUrl.length > 200000 ? null : message.imageUrl,
+        videoUrl: typeof message.videoUrl === 'string' && message.videoUrl.length > 200000 ? null : message.videoUrl,
+        audioUrl: typeof message.audioUrl === 'string' && message.audioUrl.length > 200000 ? null : message.audioUrl,
+        documentUrl: typeof message.documentUrl === 'string' && message.documentUrl.length > 200000 ? null : message.documentUrl
+      };
+      const existingIdx = localMsgs.findIndex(m => m.id === message.id);
+      if (existingIdx !== -1) {
+        localMsgs[existingIdx] = lightMsg;
+      } else {
+        localMsgs.push(lightMsg);
+      }
+      localStorage.setItem('securechat_all_messages', JSON.stringify(localMsgs));
+    } catch {}
   }
 
+  // 3. Send to backend server
   try {
     await fetchWithFallback('/messages', {
       method: 'POST',
@@ -788,6 +883,9 @@ export async function clearChatMessages(userId, targetId) {
       (m.senderId === targetId && (m.recipientId === userId || m.receiverId === userId))
     ));
   };
+
+  // Clear from IndexedDB
+  clearIndexedDbMessages(userId, isGlobal ? 'global' : targetId).catch(() => {});
 
   try {
     const allMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
@@ -861,10 +959,27 @@ export async function sendCallSignal(signalData) {
     await fetchWithFallback('/call/signal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(signalData)
+      body: JSON.stringify(signalData),
+      timeout: 3000
     });
   } catch (err) {
     // If backend is offline, BroadcastChannel will still handle local multi-tab calls
+  }
+}
+
+/**
+ * Poll call signals from active call signaling buffer
+ * Guarantees delivery of call_accepted, offer, answer, ice_candidate even if SSE dropped
+ */
+export async function syncCallSignals(callId, since = 0, userId = '') {
+  if (!callId) return null;
+  try {
+    const { data } = await fetchWithFallback(`/call/sync?callId=${encodeURIComponent(callId)}&since=${since}&userId=${encodeURIComponent(userId || '')}`, {
+      timeout: 2000
+    });
+    return data || null;
+  } catch (err) {
+    return null;
   }
 }
 

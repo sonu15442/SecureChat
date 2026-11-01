@@ -44,6 +44,7 @@ import { resumeAudioContext } from '../utils/statusAudioPlayer';
 import { searchUsers } from '../utils/api';
 import { recordAction } from '../utils/testRecorder';
 import { analyzeUrl } from '../utils/linkDetector';
+import { formatLastSeenDate } from '../utils/timeFormat';
 
 export default function Sidebar({
   allUsers = [],
@@ -198,16 +199,14 @@ export default function Sidebar({
   const isGlobalActive = !activeChatTarget || activeChatTarget === 'global';
   const totalUnread = Object.values(unreadCounts).reduce((acc, count) => acc + count, 0);
 
-  // Helper to check online status safely (strictly based on real-time presence & backend status)
+  // Helper to check online status safely (strictly based on real-time presence)
   const checkIsOnline = (user) => {
     if (!user || !user.id) return false;
     if (currentUser?.id && user.id === currentUser.id) return true;
     if (Array.isArray(onlineUsers)) {
-      if (onlineUsers.some(o => (typeof o === 'string' ? o === user.id : o?.id === user.id))) {
-        return true;
-      }
+      return onlineUsers.some(o => (typeof o === 'string' ? o === user.id : o?.id === user.id));
     }
-    return Boolean(user.isOnline);
+    return false;
   };
 
   return (
@@ -870,8 +869,14 @@ export default function Sidebar({
                             <h3 className="text-[15px] font-bold text-white truncate">
                               {user.name}
                             </h3>
-                            <span className={`text-[11px] shrink-0 ${unread > 0 ? 'text-[#f97316] font-bold' : 'text-slate-400'}`}>
-                              {user.lastSeen || (isOnline ? 'Online' : 'Yesterday')}
+                            <span className={`text-[11px] shrink-0 font-medium ${
+                              unread > 0
+                                ? 'text-[#f97316] font-bold'
+                                : isOnline
+                                  ? 'text-[#22c55e] font-semibold'
+                                  : 'text-slate-400'
+                            }`}>
+                              {isOnline ? 'Online' : formatLastSeenDate(user, false)}
                             </span>
                           </div>
 
@@ -879,7 +884,9 @@ export default function Sidebar({
                             <p className="text-xs text-slate-400 truncate flex items-center gap-1">
                               {isOnline ? (
                                 <span className="text-[#22c55e] font-semibold">● Online • </span>
-                              ) : null}
+                              ) : (
+                                <span className="text-slate-400 font-normal">Last seen {formatLastSeenDate(user, false)} • </span>
+                              )}
                               <span>{user.bio || `@${(user.username || 'user').replace('@', '')}`}</span>
                             </p>
 
@@ -932,7 +939,7 @@ export default function Sidebar({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <h3 className="text-[15px] font-bold text-white truncate">Security Updates</h3>
-                          <span className="text-[11px] text-slate-400">Yesterday</span>
+                          <span className="text-[11px] text-slate-400">{formatLastSeenDate(new Date(Date.now() - 3600000 * 4), false)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-slate-400 truncate">Your privacy report is ready</p>
@@ -1180,7 +1187,7 @@ export default function Sidebar({
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-white truncate">{user.name}</p>
                         <p className="text-xs text-slate-400 truncate">
-                          {checkIsOnline(user) ? 'Online' : 'Offline'}
+                          {checkIsOnline(user) ? 'Online' : formatLastSeenDate(user, false)}
                         </p>
                       </div>
                     </div>
