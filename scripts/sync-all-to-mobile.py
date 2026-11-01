@@ -4,6 +4,7 @@ files_to_sync = [
     'src/components/SettingsPanel.jsx',
     'src/components/AuthModal.jsx',
     'src/components/ChatPanel.jsx',
+    'src/components/IncomingCallModal.jsx',
     'src/components/VoiceCallModal.jsx',
     'src/components/VideoCallModal.jsx',
     'src/components/StatusModal.jsx',

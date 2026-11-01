@@ -17,17 +17,7 @@ const RTC_CONFIG = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    {
-      urls: [
-        'turn:standard.relay.metered.ca:80',
-        'turn:standard.relay.metered.ca:443',
-        'turn:standard.relay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'stun:stun4.l.google.com:19302' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -55,7 +45,6 @@ export default function VideoCallModal({
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const remoteAudioCtxRef = useRef(null);
-  const remoteGainRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
@@ -88,34 +77,59 @@ export default function VideoCallModal({
     }
   }, [call?.status, callStatus]);
 
-  // Caller active polling sync during ringing guarantees ringtone stops immediately when Callee picks up
+  // Continuous Polling Sync: Guarantees immediate ringtone stop on pickup and mutual call teardown
   useEffect(() => {
-    if (isCaller && callStatus === 'ringing') {
-      let lastCheck = Date.now() - 10000;
-      const pollTimer = setInterval(async () => {
-        if (callStatus !== 'ringing') {
-          clearInterval(pollTimer);
+    let active = true;
+    let lastCheck = 0;
+
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
+        if (!active || !res) return;
+        lastCheck = res.serverTime || Date.now();
+
+        // 1. If call ended on backend, tear down modal immediately on both sides
+        if (
+          res.status === 'ended' ||
+          (Array.isArray(res.signals) && res.signals.some(s => s && (s.type === 'call_end' || s.type === 'call_cancel' || s.type === 'call_reject')))
+        ) {
+          stopAllRingtones();
+          handleEndCallAction();
           return;
         }
-        try {
-          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
-          if (res) {
-            lastCheck = res.serverTime || Date.now();
-            if (res.status === 'connected' || (res.signals && res.signals.some(s => s.type === 'call_accepted'))) {
-              stopAllRingtones();
-              setCallStatus('connected');
-              playConnectedChime();
-              sendOffer();
-            } else if (res.status === 'ended' || (res.signals && res.signals.some(s => s.type === 'call_reject' || s.type === 'call_end' || s.type === 'call_cancel'))) {
-              stopAllRingtones();
-              handleEndCallAction();
+
+        // 2. If Callee answered, ensure ringtone stops and caller transitions to connected
+        if (
+          res.status === 'connected' ||
+          (Array.isArray(res.signals) && res.signals.some(s => s && s.type === 'call_accepted'))
+        ) {
+          if (callStatus === 'ringing') {
+            stopAllRingtones();
+            setCallStatus('connected');
+            playConnectedChime();
+            if (isCaller) sendOffer();
+          }
+        }
+
+        // 3. Process any incoming WebRTC signals
+        if (Array.isArray(res.signals)) {
+          for (const sig of res.signals) {
+            if (sig && sig.callId === call.callId) {
+              handleSignal(sig);
             }
           }
-        } catch {}
-      }, 400);
-      return () => clearInterval(pollTimer);
-    }
-  }, [isCaller, callStatus, call.callId, targetUser?.id]);
+        }
+      } catch {}
+    };
+
+    const timer = setInterval(poll, 600);
+    poll();
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [call.callId, targetUser?.id, callStatus, isCaller]);
 
   // Callee retry for call_accepted until offer arrives
   useEffect(() => {
@@ -123,7 +137,7 @@ export default function VideoCallModal({
       let attempts = 0;
       const retryTimer = setInterval(() => {
         attempts++;
-        if (pcRef.current?.remoteDescription || attempts > 5) {
+        if (pcRef.current?.remoteDescription || attempts > 6) {
           clearInterval(retryTimer);
           return;
         }
@@ -135,35 +149,10 @@ export default function VideoCallModal({
             targetId: targetUser.id
           });
         }
-      }, 600);
+      }, 500);
       return () => clearInterval(retryTimer);
     }
   }, [isCaller, callStatus, call.callId, targetUser?.id]);
-
-  // Periodic signal polling fallback during WebRTC handshake
-  useEffect(() => {
-    if (callStatus === 'connected') {
-      let lastCheck = Date.now() - 5000;
-      const syncTimer = setInterval(async () => {
-        const pc = pcRef.current;
-        if (!pc || pc.connectionState === 'connected') {
-          return;
-        }
-        try {
-          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
-          if (res && Array.isArray(res.signals)) {
-            lastCheck = res.serverTime || Date.now();
-            for (const sig of res.signals) {
-              if (sig && sig.callId === call.callId) {
-                handleSignal(sig);
-              }
-            }
-          }
-        } catch {}
-      }, 500);
-      return () => clearInterval(syncTimer);
-    }
-  }, [callStatus, call.callId, targetUser?.id]);
 
   // Ensure caller automatically creates offer once call transitions to connected
   useEffect(() => {
@@ -357,6 +346,14 @@ export default function VideoCallModal({
     if (!signal || signal.callId !== call.callId) return;
     if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
 
+    // Terminate call immediately if other user ended, rejected, or cancelled
+    if (signal.type === 'call_end' || signal.type === 'call_cancel' || signal.type === 'call_reject') {
+      stopAllRingtones();
+      playEndedChime();
+      handleEndCallAction();
+      return;
+    }
+
     const sigKey = `${signal.type}_${signal.timestamp || ''}_${signal.candidate?.candidate || ''}_${signal.sdp?.sdp?.slice(0, 30) || ''}`;
     if (processedSignalsRef.current.has(sigKey)) return;
     processedSignalsRef.current.add(sigKey);
@@ -520,12 +517,13 @@ export default function VideoCallModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
-      {/* Remote Audio Output Element for guaranteed voice clarity */}
+      {/* Remote Audio Output Element for guaranteed voice clarity (In-DOM for mobile WebView playback) */}
       <audio
         ref={remoteAudioRef}
         autoPlay
         playsInline
-        style={{ position: 'fixed', top: '-9000px', left: '-9000px', width: '1px', height: '1px', opacity: 0.01, pointerEvents: 'none' }}
+        controls={false}
+        className="w-0.5 h-0.5 opacity-90 pointer-events-none absolute bottom-0 left-0"
       />
       <div className="w-full max-w-4xl rounded-3xl overflow-hidden border border-orange-500/30 bg-[#060b0e] shadow-2xl flex flex-col h-[650px] relative">
         

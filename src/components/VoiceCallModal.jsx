@@ -17,17 +17,7 @@ const RTC_CONFIG = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    {
-      urls: [
-        'turn:standard.relay.metered.ca:80',
-        'turn:standard.relay.metered.ca:443',
-        'turn:standard.relay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'stun:stun4.l.google.com:19302' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -57,7 +47,6 @@ export default function VoiceCallModal({
   const pcRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const remoteAudioCtxRef = useRef(null);
-  const remoteGainRef = useRef(null);
 
   const audioCtxRef = useRef(null);
   const animFrameRef = useRef(null);
@@ -67,7 +56,7 @@ export default function VoiceCallModal({
   const pendingAnswerRef = useRef(null);
   const processedSignalsRef = useRef(new Set());
 
-  // 1. Manage Outgoing Ringback Tone if caller
+  // 1. Manage Ringback Tone: ONLY caller rings during 'ringing' status; Callee never rings here
   useEffect(() => {
     if (callStatus === 'ringing' && isCaller) {
       startOutgoingRingtone();
@@ -79,7 +68,7 @@ export default function VoiceCallModal({
     };
   }, [callStatus, isCaller]);
 
-  // Sync prop status changes (e.g. peer accepted)
+  // Sync prop status changes (e.g. peer accepted or call connected)
   useEffect(() => {
     if (call?.status && call.status !== callStatus) {
       if (call.status === 'connected' && callStatus === 'ringing') {
@@ -90,34 +79,59 @@ export default function VoiceCallModal({
     }
   }, [call?.status, callStatus]);
 
-  // Caller active polling sync during ringing guarantees ringtone stops immediately when Callee picks up
+  // Continuous Polling Sync: Guarantees immediate ringtone stop on pickup and mutual call teardown
   useEffect(() => {
-    if (isCaller && callStatus === 'ringing') {
-      let lastCheck = Date.now() - 10000;
-      const pollTimer = setInterval(async () => {
-        if (callStatus !== 'ringing') {
-          clearInterval(pollTimer);
+    let active = true;
+    let lastCheck = 0;
+
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
+        if (!active || !res) return;
+        lastCheck = res.serverTime || Date.now();
+
+        // 1. If call ended on backend, tear down modal immediately on both sides
+        if (
+          res.status === 'ended' ||
+          (Array.isArray(res.signals) && res.signals.some(s => s && (s.type === 'call_end' || s.type === 'call_cancel' || s.type === 'call_reject')))
+        ) {
+          stopAllRingtones();
+          handleEndCallAction();
           return;
         }
-        try {
-          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
-          if (res) {
-            lastCheck = res.serverTime || Date.now();
-            if (res.status === 'connected' || (res.signals && res.signals.some(s => s.type === 'call_accepted'))) {
-              stopAllRingtones();
-              setCallStatus('connected');
-              playConnectedChime();
-              sendOffer();
-            } else if (res.status === 'ended' || (res.signals && res.signals.some(s => s.type === 'call_reject' || s.type === 'call_end' || s.type === 'call_cancel'))) {
-              stopAllRingtones();
-              handleEndCallAction();
+
+        // 2. If Callee answered, ensure ringtone stops and caller transitions to connected
+        if (
+          res.status === 'connected' ||
+          (Array.isArray(res.signals) && res.signals.some(s => s && s.type === 'call_accepted'))
+        ) {
+          if (callStatus === 'ringing') {
+            stopAllRingtones();
+            setCallStatus('connected');
+            playConnectedChime();
+            if (isCaller) sendOffer();
+          }
+        }
+
+        // 3. Process any incoming WebRTC signals
+        if (Array.isArray(res.signals)) {
+          for (const sig of res.signals) {
+            if (sig && sig.callId === call.callId) {
+              handleSignal(sig);
             }
           }
-        } catch {}
-      }, 400);
-      return () => clearInterval(pollTimer);
-    }
-  }, [isCaller, callStatus, call.callId, targetUser?.id]);
+        }
+      } catch {}
+    };
+
+    const timer = setInterval(poll, 600);
+    poll();
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [call.callId, targetUser?.id, callStatus, isCaller]);
 
   // Callee retry for call_accepted until offer arrives
   useEffect(() => {
@@ -125,7 +139,7 @@ export default function VoiceCallModal({
       let attempts = 0;
       const retryTimer = setInterval(() => {
         attempts++;
-        if (pcRef.current?.remoteDescription || attempts > 5) {
+        if (pcRef.current?.remoteDescription || attempts > 6) {
           clearInterval(retryTimer);
           return;
         }
@@ -137,35 +151,10 @@ export default function VoiceCallModal({
             targetId: targetUser.id
           });
         }
-      }, 600);
+      }, 500);
       return () => clearInterval(retryTimer);
     }
   }, [isCaller, callStatus, call.callId, targetUser?.id]);
-
-  // Periodic signal polling fallback during WebRTC handshake
-  useEffect(() => {
-    if (callStatus === 'connected') {
-      let lastCheck = Date.now() - 5000;
-      const syncTimer = setInterval(async () => {
-        const pc = pcRef.current;
-        if (!pc || pc.connectionState === 'connected') {
-          return;
-        }
-        try {
-          const res = await syncCallSignals(call.callId, lastCheck, targetUser?.id);
-          if (res && Array.isArray(res.signals)) {
-            lastCheck = res.serverTime || Date.now();
-            for (const sig of res.signals) {
-              if (sig && sig.callId === call.callId) {
-                handleSignal(sig);
-              }
-            }
-          }
-        } catch {}
-      }, 500);
-      return () => clearInterval(syncTimer);
-    }
-  }, [callStatus, call.callId, targetUser?.id]);
 
   // Ensure caller automatically creates offer once call transitions to connected
   useEffect(() => {
@@ -240,10 +229,14 @@ export default function VoiceCallModal({
         };
         pc.onconnectionstatechange = () => {
           console.log('[WebRTC Voice] Connection State:', pc.connectionState);
+          if (pc.connectionState === 'closed') {
+            handleEndCallAction();
+          }
         };
 
         // Add local tracks to peer connection
         stream.getAudioTracks().forEach(track => {
+          track.enabled = true;
           pc.addTrack(track, stream);
         });
 
@@ -252,13 +245,13 @@ export default function VoiceCallModal({
           console.log('[WebRTC Voice] Remote track received:', event.track.id, event.track.kind);
           event.track.enabled = true;
 
-          const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-          remoteStreamRef.current = stream;
+          const remoteStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+          remoteStreamRef.current = remoteStream;
 
           if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = stream;
-            remoteAudioRef.current.muted = !isSpeakerOn;
-            remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
+            remoteAudioRef.current.srcObject = remoteStream;
+            remoteAudioRef.current.muted = false;
+            remoteAudioRef.current.volume = 1.0;
             const playPromise = remoteAudioRef.current.play();
             if (playPromise !== undefined) {
               playPromise.catch(e => {
@@ -278,7 +271,7 @@ export default function VoiceCallModal({
             }
           }
 
-          // Dedicated Web Audio API output and voice visualizer
+          // Audio Analyser for voice wave visualizer (Connect to Analyser ONLY, never to destination)
           try {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
@@ -289,29 +282,20 @@ export default function VoiceCallModal({
               actx.resume().catch(() => {});
             }
 
-            if (!remoteGainRef.current) {
-              const streamClone = stream.clone();
-              const source = actx.createMediaStreamSource(streamClone);
-              const gainNode = actx.createGain();
-              gainNode.gain.setValueAtTime(isSpeakerOn ? 1.0 : 0.0, actx.currentTime);
-              
-              const analyser = actx.createAnalyser();
-              analyser.fftSize = 256;
-              source.connect(analyser);
-              source.connect(gainNode);
-              gainNode.connect(actx.destination);
+            const source = actx.createMediaStreamSource(remoteStream);
+            const analyser = actx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
 
-              const dataArr = new Uint8Array(analyser.frequencyBinCount);
-              const updateRemoteVoice = () => {
-                if (cancelled) return;
-                analyser.getByteFrequencyData(dataArr);
-                const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
-                setRemoteAudioLevel(avg / 255);
-                requestAnimationFrame(updateRemoteVoice);
-              };
-              updateRemoteVoice();
-              remoteGainRef.current = gainNode;
-            }
+            const dataArr = new Uint8Array(analyser.frequencyBinCount);
+            const updateRemoteVoice = () => {
+              if (cancelled) return;
+              analyser.getByteFrequencyData(dataArr);
+              const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
+              setRemoteAudioLevel(avg / 255);
+              requestAnimationFrame(updateRemoteVoice);
+            };
+            updateRemoteVoice();
           } catch (err) {
             console.warn('Web Audio meter warning:', err);
           }
@@ -431,6 +415,14 @@ export default function VoiceCallModal({
   const handleSignal = async (signal) => {
     if (!signal || signal.callId !== call.callId) return;
     if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
+
+    // Terminate call immediately if other user ended, rejected, or cancelled
+    if (signal.type === 'call_end' || signal.type === 'call_cancel' || signal.type === 'call_reject') {
+      stopAllRingtones();
+      playEndedChime();
+      handleEndCallAction();
+      return;
+    }
 
     const sigKey = `${signal.type}_${signal.timestamp || ''}_${signal.candidate?.candidate || ''}_${signal.sdp?.sdp?.slice(0, 30) || ''}`;
     if (processedSignalsRef.current.has(sigKey)) return;
@@ -562,12 +554,13 @@ export default function VoiceCallModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
-      {/* Remote Audio Output Element for Web & Mobile voice clarity */}
+      {/* Remote Audio Output Element for Web & Mobile voice clarity (Kept in-DOM for reliable WebView audio delivery) */}
       <audio
         ref={remoteAudioRef}
         autoPlay
         playsInline
-        style={{ position: 'fixed', top: '-9000px', left: '-9000px', width: '10px', height: '10px', opacity: 0.01, pointerEvents: 'none' }}
+        controls={false}
+        className="w-0.5 h-0.5 opacity-90 pointer-events-none absolute bottom-0 left-0"
       />
 
       <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center justify-between min-h-[520px] border border-orange-500/30 bg-gradient-to-b from-[#091519] to-[#04080a] shadow-2xl relative overflow-hidden">

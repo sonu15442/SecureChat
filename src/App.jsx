@@ -835,70 +835,59 @@ function App() {
     // Reject self-echo signals
     if (signal.senderId && String(signal.senderId) === String(currentUser.id)) return;
 
+    const currentCall = activeCallRef.current;
+    const currentIncoming = incomingCallRef.current;
+    const isMatchingCall = (currentCall && currentCall.callId === signal.callId) ||
+                           (currentIncoming && currentIncoming.callId === signal.callId);
+    const isTargetMe = String(signal.recipientId) === String(currentUser.id) ||
+                       String(signal.targetId) === String(currentUser.id);
+
     if (signal.type === 'call_invite') {
       if (String(signal.recipientId) === String(currentUser.id)) {
         setIncomingCall(signal);
       }
-    } else if (signal.type === 'call_cancel') {
-      if (String(signal.recipientId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
+    } else if (signal.type === 'call_cancel' || signal.type === 'call_reject' || signal.type === 'call_end') {
+      // If either party cancels, declines, or hangs up, terminate call UI and silence ringtones immediately on both devices
+      if (isTargetMe || isMatchingCall) {
         stopAllRingtones();
-        const caller = incomingCallRef.current?.caller || signal.caller;
-        if (caller) {
-          logCallRecord({
-            targetUser: caller,
-            type: incomingCallRef.current?.callType || signal.callType || 'voice',
-            direction: 'missed',
-            duration: 0,
-            status: 'missed'
-          });
-        }
-        setIncomingCall(null);
-      }
-    } else if (signal.type === 'call_reject') {
-      if (String(signal.recipientId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
-        stopAllRingtones();
-        const recipient = activeCallRef.current?.recipient;
-        if (recipient) {
-          logCallRecord({
-            targetUser: recipient,
-            type: activeCallRef.current?.type || 'voice',
-            direction: 'outgoing',
-            duration: 0,
-            status: 'declined'
-          });
-        }
-        setActiveCall(null);
-        setIncomingCall(null);
-      }
-    } else if (signal.type === 'call_accepted') {
-      if (String(signal.recipientId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
-        stopAllRingtones();
-        callConnectTimeRef.current = Date.now();
-        setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
-        setLatestIncomingSignal(signal);
-      }
-    } else if (signal.type === 'call_end') {
-      stopAllRingtones();
-      if (String(signal.recipientId) === String(currentUser.id) || String(signal.targetId) === String(currentUser.id) || (activeCallRef.current && activeCallRef.current.callId === signal.callId)) {
-        if (activeCallRef.current) {
+        if (currentCall) {
           const dur = callConnectTimeRef.current ? Math.floor((Date.now() - callConnectTimeRef.current) / 1000) : 0;
-          const target = activeCallRef.current.isCaller ? activeCallRef.current.recipient : activeCallRef.current.caller;
+          const target = currentCall.isCaller ? currentCall.recipient : currentCall.caller;
           logCallRecord({
-            callId: activeCallRef.current.callId,
+            callId: currentCall.callId,
             targetUser: target,
-            type: activeCallRef.current.type || 'voice',
-            direction: activeCallRef.current.isCaller ? 'outgoing' : 'incoming',
+            type: currentCall.type || 'voice',
+            direction: currentCall.isCaller ? 'outgoing' : 'incoming',
             duration: dur,
-            status: dur > 0 ? 'completed' : 'cancelled'
+            status: dur > 0 ? 'completed' : (signal.type === 'call_reject' ? 'declined' : 'cancelled')
           });
+        } else if (currentIncoming) {
+          const caller = currentIncoming.caller || signal.caller;
+          if (caller) {
+            logCallRecord({
+              callId: currentIncoming.callId,
+              targetUser: caller,
+              type: currentIncoming.callType || signal.callType || 'voice',
+              direction: 'incoming',
+              duration: 0,
+              status: signal.type === 'call_cancel' ? 'missed' : 'declined'
+            });
+          }
         }
         setActiveCall(null);
         setIncomingCall(null);
         setLatestIncomingSignal(null);
         callConnectTimeRef.current = null;
       }
+    } else if (signal.type === 'call_accepted') {
+      if (isTargetMe || isMatchingCall) {
+        stopAllRingtones();
+        callConnectTimeRef.current = Date.now();
+        setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
+        setLatestIncomingSignal(signal);
+      }
     } else if (signal.type === 'offer' || signal.type === 'answer' || signal.type === 'ice_candidate') {
-      if (String(signal.targetId) === String(currentUser.id)) {
+      if (isTargetMe || isMatchingCall) {
         setLatestIncomingSignal(signal);
       }
     }
@@ -942,7 +931,9 @@ function App() {
       callId,
       callType: type,
       caller: currentUser,
-      recipientId: freshTarget.id
+      recipientId: freshTarget.id,
+      targetId: freshTarget.id,
+      senderId: currentUser.id
     };
 
     broadcastCallSignal(invitePayload);
@@ -977,6 +968,8 @@ function App() {
       type: 'call_accepted',
       callId: incomingCall.callId,
       recipientId: incomingCall.caller.id,
+      targetId: incomingCall.caller.id,
+      senderId: currentUser.id,
       callee: currentUser
     };
 
@@ -988,7 +981,7 @@ function App() {
   }, [incomingCall, currentUser]);
 
   const handleDeclineIncomingCall = useCallback(() => {
-    if (!incomingCall) return;
+    if (!incomingCall || !currentUser) return;
 
     stopAllRingtones();
     recordAction('Session Management', 'User declines incoming call', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
@@ -1004,14 +997,16 @@ function App() {
     const rejectPayload = {
       type: 'call_reject',
       callId: incomingCall.callId,
-      recipientId: incomingCall.caller.id
+      recipientId: incomingCall.caller.id,
+      targetId: incomingCall.caller.id,
+      senderId: currentUser.id
     };
 
     broadcastCallSignal(rejectPayload);
     sendCallSignal(rejectPayload);
 
     setIncomingCall(null);
-  }, [incomingCall, logCallRecord]);
+  }, [incomingCall, currentUser, logCallRecord]);
 
   const handleEndActiveCall = useCallback((currentCall, passedDuration) => {
     if (!currentCall || !currentUser) return;
@@ -1041,7 +1036,9 @@ function App() {
       const cancelPayload = {
         type: 'call_cancel',
         callId: currentCall.callId,
-        recipientId: targetId
+        recipientId: targetId,
+        targetId,
+        senderId: currentUser.id
       };
       broadcastCallSignal(cancelPayload);
       sendCallSignal(cancelPayload);
@@ -1050,7 +1047,8 @@ function App() {
         type: 'call_end',
         callId: currentCall.callId,
         recipientId: targetId,
-        targetId
+        targetId,
+        senderId: currentUser.id
       };
       broadcastCallSignal(endPayload);
       sendCallSignal(endPayload);

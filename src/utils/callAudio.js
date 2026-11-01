@@ -27,7 +27,7 @@ function getAudioContext() {
 
 /**
  * Stop any and all active ringtones instantly with zero delay
- * Forcefully stops all scheduled oscillators and silences gain nodes
+ * Forcefully cancels scheduled audio values, silences gain nodes and disconnects all oscillators
  */
 export function stopAllRingtones() {
   isOutgoingPlaying = false;
@@ -42,31 +42,39 @@ export function stopAllRingtones() {
     incomingInterval = null;
   }
 
+  // Immediately silence and disconnect master gain nodes
+  if (audioCtx && audioCtx.state !== 'closed') {
+    try {
+      const cur = audioCtx.currentTime;
+      if (masterOutgoingGain) {
+        masterOutgoingGain.gain.cancelScheduledValues(cur);
+        masterOutgoingGain.gain.setValueAtTime(0, cur);
+        masterOutgoingGain.disconnect();
+      }
+      if (masterIncomingGain) {
+        masterIncomingGain.gain.cancelScheduledValues(cur);
+        masterIncomingGain.gain.setValueAtTime(0, cur);
+        masterIncomingGain.disconnect();
+      }
+    } catch {}
+  }
+  masterOutgoingGain = null;
+  masterIncomingGain = null;
+
+  // Disconnect all scheduled oscillators immediately so zero audio reaches speakers
   outgoingOscillators.forEach(osc => {
-    try { osc.stop(0); osc.disconnect(); } catch {}
+    try {
+      osc.disconnect();
+    } catch {}
   });
   outgoingOscillators = [];
 
   incomingOscillators.forEach(osc => {
-    try { osc.stop(0); osc.disconnect(); } catch {}
+    try {
+      osc.disconnect();
+    } catch {}
   });
   incomingOscillators = [];
-
-  if (masterOutgoingGain) {
-    try {
-      masterOutgoingGain.gain.setValueAtTime(0, 0);
-      masterOutgoingGain.disconnect();
-    } catch {}
-    masterOutgoingGain = null;
-  }
-
-  if (masterIncomingGain) {
-    try {
-      masterIncomingGain.gain.setValueAtTime(0, 0);
-      masterIncomingGain.disconnect();
-    } catch {}
-    masterIncomingGain = null;
-  }
 }
 
 /**
@@ -121,22 +129,7 @@ export function startOutgoingRingtone() {
 }
 
 export function stopOutgoingRingtone() {
-  isOutgoingPlaying = false;
-  if (outgoingInterval) {
-    clearInterval(outgoingInterval);
-    outgoingInterval = null;
-  }
-  if (masterOutgoingGain && audioCtx) {
-    try {
-      masterOutgoingGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      masterOutgoingGain.disconnect();
-    } catch {}
-    masterOutgoingGain = null;
-  }
-  outgoingOscillators.forEach(osc => {
-    try { osc.stop(0); osc.disconnect(); } catch {}
-  });
-  outgoingOscillators = [];
+  stopAllRingtones();
 }
 
 /**
@@ -196,22 +189,7 @@ export function startIncomingRingtone() {
 }
 
 export function stopIncomingRingtone() {
-  isIncomingPlaying = false;
-  if (incomingInterval) {
-    clearInterval(incomingInterval);
-    incomingInterval = null;
-  }
-  if (masterIncomingGain && audioCtx) {
-    try {
-      masterIncomingGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      masterIncomingGain.disconnect();
-    } catch {}
-    masterIncomingGain = null;
-  }
-  incomingOscillators.forEach(osc => {
-    try { osc.stop(0); osc.disconnect(); } catch {}
-  });
-  incomingOscillators = [];
+  stopAllRingtones();
 }
 
 /**

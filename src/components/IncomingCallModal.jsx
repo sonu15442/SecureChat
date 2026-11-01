@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Phone, PhoneOff, Video, ShieldCheck, Volume2 } from 'lucide-react';
 import { startIncomingRingtone, stopAllRingtones } from '../utils/callAudio';
+import { syncCallSignals } from '../utils/api';
 
 export default function IncomingCallModal({ call, onAccept, onDecline, allUsers }) {
   const isVideo = call?.type === 'video';
@@ -14,6 +15,31 @@ export default function IncomingCallModal({ call, onAccept, onDecline, allUsers 
       stopAllRingtones();
     };
   }, []);
+
+  // Poll for caller cancellation (call_cancel / call_end) so modal closes immediately if caller hangs up
+  useEffect(() => {
+    if (!call?.callId) return;
+    let active = true;
+    const timer = setInterval(async () => {
+      if (!active) return;
+      try {
+        const res = await syncCallSignals(call.callId, 0, caller?.id);
+        if (!active || !res) return;
+        if (
+          res.status === 'ended' ||
+          (res.signals && res.signals.some(s => s.type === 'call_cancel' || s.type === 'call_end' || s.type === 'call_reject'))
+        ) {
+          stopAllRingtones();
+          onDecline();
+        }
+      } catch {}
+    }, 700);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [call?.callId, caller?.id, onDecline]);
 
   const handleAccept = () => {
     stopAllRingtones();

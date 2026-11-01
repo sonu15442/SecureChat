@@ -235,6 +235,14 @@ app.get('/api/health/db', (req, res) => {
   res.json(getDbHealth());
 });
 
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    connectedDevices: sseClients.size,
+    timestamp: Date.now()
+  });
+});
+
 /**
  * GET /api/realtime/stream
  * Server-Sent Events (SSE) stream for sub-100ms real-time sync across Laptop & Mobile
