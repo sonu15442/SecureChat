@@ -1,68 +1,5 @@
 [
   {
-    "id": "test_1792771455845_gtlo",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Panigrahi",
-    "duration": 0.08,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:04:15.845Z"
-  },
-  {
-    "id": "test_1792771498122_yj6b",
-    "category": "Session Management",
-    "name": "Selenium Website: User initiates encrypted voice call",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:04:58.122Z"
-  },
-  {
-    "id": "test_1792771501435_83l4",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:05:01.436Z"
-  },
-  {
-    "id": "test_1792771501441_tr0u",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:05:01.441Z"
-  },
-  {
-    "id": "test_1792772989218_538b",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Panigrahi",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:29:49.218Z"
-  },
-  {
-    "id": "test_1792773012044_lp1o",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Panigrahi",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:30:12.044Z"
-  },
-  {
-    "id": "test_1792773789814_zd03",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Status rail tab",
-    "duration": 0.08,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:43:09.814Z"
-  },
-  {
     "id": "test_1792773792678_n30z",
     "category": "Navigation",
     "name": "Selenium Website: User switches to Calls rail tab",
@@ -1798,5 +1735,68 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-11-01T12:32:32.113Z"
+  },
+  {
+    "id": "test_1793537867428_9dry",
+    "category": "Session Management",
+    "name": "Selenium Website: User initiates encrypted voice call",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:57:47.428Z"
+  },
+  {
+    "id": "test_1793537873335_a6wp",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates voice call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:57:53.335Z"
+  },
+  {
+    "id": "test_1793537873348_3vzo",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:57:53.348Z"
+  },
+  {
+    "id": "test_1793537876117_9o2f",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Calls rail tab",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:57:56.117Z"
+  },
+  {
+    "id": "test_1793537878141_xpuh",
+    "category": "Session Management",
+    "name": "Selenium Website: User initiates encrypted voice call",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:57:58.141Z"
+  },
+  {
+    "id": "test_1793537891052_8dcq",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates voice call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:58:11.052Z"
+  },
+  {
+    "id": "test_1793537891066_q0sx",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T12:58:11.066Z"
   }
 ]

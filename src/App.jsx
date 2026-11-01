@@ -39,6 +39,7 @@ import {
   initRealtimeEventStream,
   checkServerHealth,
   sendCallSignal,
+  checkActiveCallForUser,
   getFriendsApi,
   followUserApi,
   unfollowUserApi
@@ -897,6 +898,28 @@ function App() {
   useEffect(() => {
     handleIncomingCallSignalRef.current = handleIncomingCallSignal;
   }, [handleIncomingCallSignal]);
+
+  // Periodic active incoming call poll: Guarantees mobile and web receive calls even if SSE disconnects
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let active = true;
+
+    const checkIncoming = async () => {
+      if (!active || activeCallRef.current || incomingCallRef.current) return;
+      try {
+        const incoming = await checkActiveCallForUser(currentUser.id);
+        if (active && incoming && !activeCallRef.current && !incomingCallRef.current) {
+          setIncomingCall(incoming);
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(checkIncoming, 1200);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [currentUser?.id]);
 
   const initiateCall = useCallback((type, targetUser) => {
     if (!currentUser) return;

@@ -984,6 +984,22 @@ export async function syncCallSignals(callId, since = 0, userId = '') {
 }
 
 /**
+ * Check if there is an active incoming call for the current user
+ * Ensures call arrival even if SSE disconnects on mobile
+ */
+export async function checkActiveCallForUser(userId) {
+  if (!userId) return null;
+  try {
+    const { data } = await fetchWithFallback(`/call/active-for-user?userId=${encodeURIComponent(userId)}`, {
+      timeout: 2000
+    });
+    return data?.call || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch all friendships from backend
  */
 export async function getFriendsApi() {

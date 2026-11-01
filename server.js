@@ -1034,12 +1034,15 @@ app.post('/api/call/signal', (req, res) => {
           status: signal.type === 'call_accepted' ? 'connected' : 'ringing',
           callerId: signal.caller?.id || signal.senderId,
           recipientId: signal.recipientId || signal.targetId,
+          inviteSignal: signal.type === 'call_invite' ? signal : null,
           lastUpdated: now
         };
         activeCalls.set(callId, call);
       } else {
         call.lastUpdated = now;
-        if (signal.type === 'call_accepted') {
+        if (signal.type === 'call_invite') {
+          call.inviteSignal = signal;
+        } else if (signal.type === 'call_accepted') {
           call.status = 'connected';
         } else if (signal.type === 'call_end' || signal.type === 'call_reject' || signal.type === 'call_cancel') {
           call.status = 'ended';
@@ -1085,6 +1088,31 @@ app.get('/api/call/sync', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to sync call signals.' });
+  }
+});
+
+/**
+ * GET /api/call/active-for-user
+ * Polls if there is any active incoming call for a specific user
+ * Guarantees mobile and web receive calls even if SSE stream drops
+ */
+app.get('/api/call/active-for-user', (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.json({ call: null });
+    const now = Date.now();
+    for (const call of activeCalls.values()) {
+      if (
+        (String(call.recipientId) === String(userId)) &&
+        call.status === 'ringing' &&
+        (now - call.lastUpdated < 40000)
+      ) {
+        return res.json({ call: call.inviteSignal || null });
+      }
+    }
+    res.json({ call: null });
+  } catch {
+    res.json({ call: null });
   }
 });
 

@@ -350,10 +350,6 @@ export default function VoiceCallModal({
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
-      if (remoteGainRef.current) {
-        try { remoteGainRef.current.disconnect(); } catch {}
-        remoteGainRef.current = null;
-      }
       if (remoteAudioCtxRef.current) {
         try { remoteAudioCtxRef.current.close().catch(() => {}); } catch {}
         remoteAudioCtxRef.current = null;
@@ -518,14 +514,6 @@ export default function VoiceCallModal({
     if (remoteAudioRef.current) {
       remoteAudioRef.current.muted = !isSpeakerOn;
       remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
-    }
-    if (remoteGainRef.current && remoteAudioCtxRef.current) {
-      try {
-        remoteGainRef.current.gain.setValueAtTime(
-          isSpeakerOn ? 1.0 : 0.0,
-          remoteAudioCtxRef.current.currentTime
-        );
-      } catch {}
     }
   }, [isSpeakerOn]);
 
