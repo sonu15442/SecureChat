@@ -92,7 +92,15 @@ export function initChannel(user) {
 
 function broadcastRaw(type, payload) {
   if (!channel) return;
-  channel.postMessage({ type, payload, senderId: currentUserId });
+  try {
+    // Clone plain object safely so native WebRTC instances (RTCIceCandidate / RTCSessionDescription) never throw DataCloneError
+    const safePayload = payload ? JSON.parse(JSON.stringify(payload)) : payload;
+    channel.postMessage({ type, payload: safePayload, senderId: currentUserId });
+  } catch (err) {
+    try {
+      channel.postMessage({ type, payload: {}, senderId: currentUserId });
+    } catch {}
+  }
 }
 
 export function broadcastMessage(msg) {

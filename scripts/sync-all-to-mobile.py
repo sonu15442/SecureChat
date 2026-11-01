@@ -12,6 +12,7 @@ files_to_sync = [
     'src/components/Sidebar.jsx',
     'src/components/AppIntroSplash.jsx',
     'src/components/LinkRiskModal.jsx',
+    'src/components/ErrorBoundary.jsx',
     'src/utils/linkDetector.js',
     'src/utils/api.js',
     'src/utils/statusManager.js',

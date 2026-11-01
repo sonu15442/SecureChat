@@ -1,86 +1,5 @@
 [
   {
-    "id": "test_1792773792678_n30z",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Calls rail tab",
-    "duration": 0.1,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:43:12.678Z"
-  },
-  {
-    "id": "test_1792773795831_71et",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T16:43:15.831Z"
-  },
-  {
-    "id": "test_1792774354893_03ib",
-    "category": "Authentication",
-    "name": "Appium Android: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChatMobile",
-    "timestamp": "2026-10-23T16:52:34.893Z"
-  },
-  {
-    "id": "test_1792774431829_y35p",
-    "category": "Authentication",
-    "name": "Appium Android: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChatMobile",
-    "timestamp": "2026-10-23T16:53:51.829Z"
-  },
-  {
-    "id": "test_1792775331912_ycbj",
-    "category": "Authentication",
-    "name": "Appium Android: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChatMobile",
-    "timestamp": "2026-10-23T17:08:51.912Z"
-  },
-  {
-    "id": "test_1792778120693_x9pw",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Panigrahi",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T17:55:20.693Z"
-  },
-  {
-    "id": "test_1792778123587_ztzt",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Panigrahi",
-    "duration": 0.14,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T17:55:23.587Z"
-  },
-  {
-    "id": "test_1792778128154_ocgk",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Calls rail tab",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T17:55:28.154Z"
-  },
-  {
-    "id": "test_1792778130003_34hy",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T17:55:30.004Z"
-  },
-  {
     "id": "test_1792778131983_uzxf",
     "category": "Navigation",
     "name": "Selenium Website: User switches to Calls rail tab",
@@ -1798,5 +1717,86 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-11-01T12:58:11.066Z"
+  },
+  {
+    "id": "test_1793538481154_xny3",
+    "category": "Session Management",
+    "name": "Selenium Website: User accepts incoming call",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:01.154Z"
+  },
+  {
+    "id": "test_1793538493602_ra5q",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates video call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:13.602Z"
+  },
+  {
+    "id": "test_1793538493609_4wxg",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:13.609Z"
+  },
+  {
+    "id": "test_1793538501772_pqkx",
+    "category": "Session Management",
+    "name": "Selenium Website: User accepts incoming call",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:21.772Z"
+  },
+  {
+    "id": "test_1793538521683_35z9",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates voice call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:41.683Z"
+  },
+  {
+    "id": "test_1793538521699_2nkn",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:41.699Z"
+  },
+  {
+    "id": "test_1793538525260_f48z",
+    "category": "Session Management",
+    "name": "Selenium Website: User accepts incoming call",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:45.260Z"
+  },
+  {
+    "id": "test_1793538531185_tv84",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates voice call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:51.185Z"
+  },
+  {
+    "id": "test_1793538531199_knfz",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-01T13:08:51.199Z"
   }
 ]

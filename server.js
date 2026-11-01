@@ -1044,8 +1044,10 @@ app.post('/api/call/signal', (req, res) => {
           call.inviteSignal = signal;
         } else if (signal.type === 'call_accepted') {
           call.status = 'connected';
+          call.inviteSignal = null;
         } else if (signal.type === 'call_end' || signal.type === 'call_reject' || signal.type === 'call_cancel') {
           call.status = 'ended';
+          call.inviteSignal = null;
         }
       }
     }
@@ -1103,11 +1105,12 @@ app.get('/api/call/active-for-user', (req, res) => {
     const now = Date.now();
     for (const call of activeCalls.values()) {
       if (
-        (String(call.recipientId) === String(userId)) &&
+        (String(call.recipientId) === String(userId) || String(call.targetId) === String(userId)) &&
         call.status === 'ringing' &&
+        call.inviteSignal &&
         (now - call.lastUpdated < 40000)
       ) {
-        return res.json({ call: call.inviteSignal || null });
+        return res.json({ call: call.inviteSignal });
       }
     }
     res.json({ call: null });

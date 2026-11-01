@@ -13,6 +13,12 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('SecureChat ErrorBoundary caught error:', error, errorInfo);
+    try {
+      localStorage.setItem('securechat_last_error', JSON.stringify({
+        message: error?.message || String(error),
+        time: new Date().toISOString()
+      }));
+    } catch {}
   }
 
   handleReset = () => {
@@ -28,9 +34,14 @@ export default class ErrorBoundary extends React.Component {
             <MessageSquare className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
-          <p className="text-sm text-slate-400 max-w-sm mb-6">
+          <p className="text-sm text-slate-400 max-w-sm mb-4">
             SecureChat encountered an unexpected interface issue. We prevented a white screen.
           </p>
+          {this.state.error && (
+            <div className="text-xs text-red-400 bg-red-950/40 p-3 rounded-xl border border-red-500/20 max-w-sm max-h-24 overflow-auto mb-6 text-left font-mono break-all">
+              {this.state.error.message || String(this.state.error)}
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <button
               onClick={this.handleReset}

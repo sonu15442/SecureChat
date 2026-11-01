@@ -55,6 +55,17 @@ export default function VoiceCallModal({
   const pendingOfferRef = useRef(null);
   const pendingAnswerRef = useRef(null);
   const processedSignalsRef = useRef(new Set());
+  const hasEndedRef = useRef(false);
+
+  const handleEndCallAction = () => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+    recordAction('Session Management', 'User terminates voice call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
+    stopAllRingtones();
+    playEndedChime();
+    if (onEndCall) onEndCall(call, duration);
+    else if (onClose) onClose();
+  };
 
   // 1. Manage Ringback Tone: ONLY caller rings during 'ringing' status; Callee never rings here
   useEffect(() => {
@@ -147,8 +158,8 @@ export default function VoiceCallModal({
           onSendSignal({
             type: 'call_accepted',
             callId: call.callId,
-            recipientId: targetUser.id,
-            targetId: targetUser.id
+            recipientId: targetUser?.id,
+            targetId: targetUser?.id
           });
         }
       }, 500);
@@ -301,14 +312,21 @@ export default function VoiceCallModal({
           }
         };
 
-        // Forward ICE candidates to peer
+        // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
         pc.onicecandidate = (event) => {
           if (event.candidate && onSendSignal) {
+            const cand = event.candidate;
+            const candObj = cand.toJSON ? cand.toJSON() : {
+              candidate: cand.candidate,
+              sdpMid: cand.sdpMid,
+              sdpMLineIndex: cand.sdpMLineIndex,
+              usernameFragment: cand.usernameFragment
+            };
             onSendSignal({
               type: 'ice_candidate',
-              candidate: event.candidate,
+              candidate: candObj,
               callId: call.callId,
-              targetId: targetUser.id
+              targetId: targetUser?.id
             });
           }
         };
@@ -383,9 +401,9 @@ export default function VoiceCallModal({
       if (onSendSignal) {
         onSendSignal({
           type: 'offer',
-          sdp: offer,
+          sdp: { type: offer.type, sdp: offer.sdp },
           callId: call.callId,
-          targetId: targetUser.id
+          targetId: targetUser?.id
         });
       }
     } catch (err) {
@@ -460,9 +478,9 @@ export default function VoiceCallModal({
         if (onSendSignal) {
           onSendSignal({
             type: 'answer',
-            sdp: answer,
+            sdp: { type: answer.type, sdp: answer.sdp },
             callId: call.callId,
-            targetId: targetUser.id
+            targetId: targetUser?.id
           });
         }
       } else if (signal.type === 'answer' && isCaller) {
@@ -523,16 +541,6 @@ export default function VoiceCallModal({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const hasEndedRef = useRef(false);
-  const handleEndCallAction = () => {
-    if (hasEndedRef.current) return;
-    hasEndedRef.current = true;
-    recordAction('Session Management', 'User terminates voice call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
-    stopAllRingtones();
-    playEndedChime();
-    if (onEndCall) onEndCall(call, duration);
-    else if (onClose) onClose();
-  };
 
   // Generate 5 sound wave visualizer bars
   const activeLevel = Math.max(localAudioLevel, remoteAudioLevel);

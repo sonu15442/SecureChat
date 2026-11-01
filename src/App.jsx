@@ -827,8 +827,10 @@ function App() {
   // ── Call Signaling & Handlers ──
   const handleSendCallSignal = useCallback((signalPayload) => {
     const payloadWithSender = { ...signalPayload, senderId: currentUser?.id };
-    broadcastCallSignal(payloadWithSender);
-    sendCallSignal(payloadWithSender);
+    try {
+      broadcastCallSignal(payloadWithSender);
+    } catch {}
+    sendCallSignal(payloadWithSender).catch(() => {});
   }, [currentUser?.id]);
 
   const handleIncomingCallSignal = useCallback((signal) => {
@@ -844,7 +846,7 @@ function App() {
                        String(signal.targetId) === String(currentUser.id);
 
     if (signal.type === 'call_invite') {
-      if (String(signal.recipientId) === String(currentUser.id)) {
+      if (String(signal.recipientId || signal.targetId) === String(currentUser.id)) {
         setIncomingCall(signal);
       }
     } else if (signal.type === 'call_cancel' || signal.type === 'call_reject' || signal.type === 'call_end') {
@@ -987,17 +989,20 @@ function App() {
       status: 'connected'
     };
 
+    const callerId = incomingCall.caller?.id || incomingCall.senderId;
     const acceptPayload = {
       type: 'call_accepted',
       callId: incomingCall.callId,
-      recipientId: incomingCall.caller.id,
-      targetId: incomingCall.caller.id,
+      recipientId: callerId,
+      targetId: callerId,
       senderId: currentUser.id,
       callee: currentUser
     };
 
-    broadcastCallSignal(acceptPayload);
-    sendCallSignal(acceptPayload);
+    try {
+      broadcastCallSignal(acceptPayload);
+    } catch {}
+    sendCallSignal(acceptPayload).catch(() => {});
 
     setActiveCall(callObj);
     setIncomingCall(null);
@@ -1017,16 +1022,19 @@ function App() {
       status: 'declined'
     });
 
+    const callerId = incomingCall.caller?.id || incomingCall.senderId;
     const rejectPayload = {
       type: 'call_reject',
       callId: incomingCall.callId,
-      recipientId: incomingCall.caller.id,
-      targetId: incomingCall.caller.id,
+      recipientId: callerId,
+      targetId: callerId,
       senderId: currentUser.id
     };
 
-    broadcastCallSignal(rejectPayload);
-    sendCallSignal(rejectPayload);
+    try {
+      broadcastCallSignal(rejectPayload);
+    } catch {}
+    sendCallSignal(rejectPayload).catch(() => {});
 
     setIncomingCall(null);
   }, [incomingCall, currentUser, logCallRecord]);
@@ -1063,8 +1071,10 @@ function App() {
         targetId,
         senderId: currentUser.id
       };
-      broadcastCallSignal(cancelPayload);
-      sendCallSignal(cancelPayload);
+      try {
+        broadcastCallSignal(cancelPayload);
+      } catch {}
+      sendCallSignal(cancelPayload).catch(() => {});
     } else {
       const endPayload = {
         type: 'call_end',
@@ -1073,8 +1083,10 @@ function App() {
         targetId,
         senderId: currentUser.id
       };
-      broadcastCallSignal(endPayload);
-      sendCallSignal(endPayload);
+      try {
+        broadcastCallSignal(endPayload);
+      } catch {}
+      sendCallSignal(endPayload).catch(() => {});
     }
 
     setActiveCall(null);

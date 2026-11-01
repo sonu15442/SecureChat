@@ -100,14 +100,14 @@ export default function IncomingCallModal({ call, onAccept, onDecline, allUsers 
 
           <div className="space-y-1">
             <h3 className="text-2xl font-black text-white tracking-tight">
-              {caller.name || 'Incoming Call'}
+              {caller?.name || 'Incoming Call'}
             </h3>
             <p className="text-sm font-semibold text-orange-400 animate-pulse flex items-center justify-center gap-1.5">
               <Volume2 className="w-4 h-4 animate-bounce" />
               <span>Incoming {isVideo ? 'Video' : 'Voice'} Call...</span>
             </p>
             <p className="text-xs text-slate-400 font-mono">
-              {caller.username || caller.email || 'SecureChat Peer'}
+              {caller?.username || caller?.email || 'SecureChat Peer'}
             </p>
           </div>
         </div>

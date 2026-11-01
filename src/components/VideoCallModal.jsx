@@ -54,6 +54,17 @@ export default function VideoCallModal({
   const pendingOfferRef = useRef(null);
   const pendingAnswerRef = useRef(null);
   const processedSignalsRef = useRef(new Set());
+  const hasEndedRef = useRef(false);
+
+  const handleEndCallAction = () => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+    recordAction('Session Management', 'User terminates video call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
+    stopAllRingtones();
+    playEndedChime();
+    if (onEndCall) onEndCall(call, duration);
+    else if (onClose) onClose();
+  };
 
   // 1. Ringing sound if outgoing
   useEffect(() => {
@@ -145,8 +156,8 @@ export default function VideoCallModal({
           onSendSignal({
             type: 'call_accepted',
             callId: call.callId,
-            recipientId: targetUser.id,
-            targetId: targetUser.id
+            recipientId: targetUser?.id,
+            targetId: targetUser?.id
           });
         }
       }, 500);
@@ -245,13 +256,21 @@ export default function VideoCallModal({
           }
         };
 
+        // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
         pc.onicecandidate = (event) => {
           if (event.candidate && onSendSignal) {
+            const cand = event.candidate;
+            const candObj = cand.toJSON ? cand.toJSON() : {
+              candidate: cand.candidate,
+              sdpMid: cand.sdpMid,
+              sdpMLineIndex: cand.sdpMLineIndex,
+              usernameFragment: cand.usernameFragment
+            };
             onSendSignal({
               type: 'ice_candidate',
-              candidate: event.candidate,
+              candidate: candObj,
               callId: call.callId,
-              targetId: targetUser.id
+              targetId: targetUser?.id
             });
           }
         };
@@ -320,9 +339,9 @@ export default function VideoCallModal({
       if (onSendSignal) {
         onSendSignal({
           type: 'offer',
-          sdp: offer,
+          sdp: { type: offer.type, sdp: offer.sdp },
           callId: call.callId,
-          targetId: targetUser.id
+          targetId: targetUser?.id
         });
       }
     } catch (err) {
@@ -394,9 +413,9 @@ export default function VideoCallModal({
         if (onSendSignal) {
           onSendSignal({
             type: 'answer',
-            sdp: answer,
+            sdp: { type: answer.type, sdp: answer.sdp },
             callId: call.callId,
-            targetId: targetUser.id
+            targetId: targetUser?.id
           });
         }
       } else if (signal.type === 'answer' && isCaller) {
@@ -410,10 +429,14 @@ export default function VideoCallModal({
         playConnectedChime();
         processQueuedSignals();
       } else if (signal.type === 'ice_candidate') {
-        if (pc && pc.remoteDescription) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-        } else {
-          candidateQueue.current.push(signal.candidate);
+        if (signal.candidate && (signal.candidate.candidate || typeof signal.candidate === 'object')) {
+          if (pc && pc.remoteDescription) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            } catch {}
+          } else {
+            candidateQueue.current.push(signal.candidate);
+          }
         }
       }
     } catch (err) {
@@ -504,16 +527,6 @@ export default function VideoCallModal({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const hasEndedRef = useRef(false);
-  const handleEndCallAction = () => {
-    if (hasEndedRef.current) return;
-    hasEndedRef.current = true;
-    recordAction('Session Management', 'User terminates video call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
-    stopAllRingtones();
-    playEndedChime();
-    if (onEndCall) onEndCall(call, duration);
-    else if (onClose) onClose();
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
