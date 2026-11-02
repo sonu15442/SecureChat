@@ -91,13 +91,12 @@ export default function VideoCallModal({
     };
   }, [callStatus, isCaller]);
 
+  // Sync prop status changes ONLY forward (ringing -> connected), NEVER revert backward!
   useEffect(() => {
-    if (call?.status && call.status !== callStatus) {
-      if (call.status === 'connected' && callStatus === 'ringing') {
-        stopAllRingtones();
-        playConnectedChime();
-      }
-      setCallStatus(call.status);
+    if (call?.status === 'connected' && callStatus === 'ringing') {
+      stopAllRingtones();
+      playConnectedChime();
+      setCallStatus('connected');
     }
   }, [call?.status, callStatus]);
 
@@ -458,8 +457,9 @@ export default function VideoCallModal({
   };
 
   const handleSignal = async (signal) => {
-    if (!signal || signal.callId !== call.callId) return;
-    if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
+    if (!signal || (signal.callId && call.callId && signal.callId !== call.callId)) return;
+    const targetUserId = targetUser?.id || rawTarget?.id || (isCaller ? call?.recipientId : call?.callerId);
+    if (signal.senderId && targetUserId && String(signal.senderId) !== String(targetUserId)) return;
 
     // Terminate call immediately if other user ended, rejected, or cancelled
     if (signal.type === 'call_end' || signal.type === 'call_cancel' || signal.type === 'call_reject') {
@@ -470,11 +470,13 @@ export default function VideoCallModal({
     }
 
     if (signal.type === 'call_accepted') {
-      setCallStatus('connected');
       stopAllRingtones();
-      playConnectedChime();
-      if (isCaller) {
-        await sendOffer();
+      if (callStatus !== 'connected') {
+        setCallStatus('connected');
+        playConnectedChime();
+        if (isCaller) {
+          await sendOffer();
+        }
       }
       return;
     }

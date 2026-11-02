@@ -93,14 +93,12 @@ export default function VoiceCallModal({
     };
   }, [callStatus, isCaller]);
 
-  // Sync prop status changes (e.g. peer accepted or call connected)
+  // Sync prop status changes ONLY forward (ringing -> connected), NEVER revert backward!
   useEffect(() => {
-    if (call?.status && call.status !== callStatus) {
-      if (call.status === 'connected' && callStatus === 'ringing') {
-        stopAllRingtones();
-        playConnectedChime();
-      }
-      setCallStatus(call.status);
+    if (call?.status === 'connected' && callStatus === 'ringing') {
+      stopAllRingtones();
+      playConnectedChime();
+      setCallStatus('connected');
     }
   }, [call?.status, callStatus]);
 
@@ -284,7 +282,7 @@ export default function VoiceCallModal({
           };
           playAudio();
 
-          // 2. Audio analyser for visualizer (analyser only, no destination output to prevent echo/cancellation)
+          // 2. Audio analyser for visualizer & direct Web Audio destination playback
           try {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
@@ -295,6 +293,12 @@ export default function VoiceCallModal({
               actx.resume().catch(() => {});
             }
             const source = actx.createMediaStreamSource(remoteStream);
+            const gain = actx.createGain();
+            gain.gain.setValueAtTime(1.0, actx.currentTime);
+            source.connect(gain);
+            gain.connect(actx.destination);
+            remoteAudioGainRef.current = gain;
+
             const analyser = actx.createAnalyser();
             analyser.fftSize = 256;
             source.connect(analyser);
@@ -532,8 +536,9 @@ export default function VoiceCallModal({
   };
 
   const handleSignal = async (signal) => {
-    if (!signal || signal.callId !== call.callId) return;
-    if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
+    if (!signal || (signal.callId && call.callId && signal.callId !== call.callId)) return;
+    const targetUserId = targetUser?.id || rawTarget?.id || (isCaller ? call?.recipientId : call?.callerId);
+    if (signal.senderId && targetUserId && String(signal.senderId) !== String(targetUserId)) return;
 
     // Terminate call immediately if other user ended, rejected, or cancelled
     if (signal.type === 'call_end' || signal.type === 'call_cancel' || signal.type === 'call_reject') {
@@ -545,15 +550,17 @@ export default function VoiceCallModal({
 
     if (signal.type === 'call_accepted') {
       stopAllRingtones();
-      setCallStatus('connected');
-      playConnectedChime();
-      try {
-        if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
-          window.NativeVoiceCall.startVoiceCall();
+      if (callStatus !== 'connected') {
+        setCallStatus('connected');
+        playConnectedChime();
+        try {
+          if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
+            window.NativeVoiceCall.startVoiceCall();
+          }
+        } catch {}
+        if (isCaller) {
+          await sendOffer();
         }
-      } catch {}
-      if (isCaller) {
-        await sendOffer();
       }
       return;
     }
