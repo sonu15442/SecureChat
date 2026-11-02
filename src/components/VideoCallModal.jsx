@@ -205,6 +205,12 @@ export default function VideoCallModal({
           localVideoRef.current.srcObject = stream;
         }
 
+        if (pendingOfferRef.current) {
+          const off = pendingOfferRef.current;
+          pendingOfferRef.current = null;
+          handleSignal(off);
+        }
+
         const pc = new RTCPeerConnection(RTC_CONFIG);
         pcRef.current = pc;
 
@@ -249,11 +255,31 @@ export default function VideoCallModal({
                   window.removeEventListener('click', resumeAudio);
                   window.removeEventListener('touchstart', resumeAudio);
                 };
-                window.addEventListener('click', resumeAudio);
-                window.addEventListener('touchstart', resumeAudio);
+                window.addEventListener('click', resumeAudio, { once: true });
+                window.addEventListener('touchstart', resumeAudio, { once: true });
               });
             }
           }
+
+          // Direct Web Audio output for guaranteed audio audibility on mobile & desktop
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const actx = new AudioCtx();
+            if (actx.state === 'suspended') actx.resume().catch(() => {});
+            const source = actx.createMediaStreamSource(remoteStreamRef.current);
+            const gainNode = actx.createGain();
+            gainNode.gain.value = 1.0;
+            source.connect(gainNode);
+            gainNode.connect(actx.destination);
+          } catch {}
+
+          // Notify native Android bridge
+          try {
+            if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
+              window.NativeVoiceCall.startVoiceCall();
+              window.NativeVoiceCall.setSpeakerphoneOn(true);
+            }
+          } catch {}
         };
 
         // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
@@ -317,23 +343,21 @@ export default function VideoCallModal({
   const sendOffer = async () => {
     if (hasSentOfferRef.current) return;
     const pc = pcRef.current;
-    if (!pc) {
+    if (!pc || !localStreamRef.current || localStreamRef.current.getTracks().length === 0) {
       setTimeout(() => {
         if (!hasSentOfferRef.current) sendOffer();
-      }, 150);
+      }, 120);
       return;
     }
     try {
       hasSentOfferRef.current = true;
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          track.enabled = track.kind === 'audio' ? !isMuted : isVideoOn;
-          const senders = pc.getSenders ? pc.getSenders() : [];
-          if (!senders.some(s => s.track && s.track.id === track.id)) {
-            pc.addTrack(track, localStreamRef.current);
-          }
-        });
-      }
+      localStreamRef.current.getTracks().forEach(track => {
+        track.enabled = track.kind === 'audio' ? !isMuted : isVideoOn;
+        const senders = pc.getSenders ? pc.getSenders() : [];
+        if (!senders.some(s => s.track && s.track.id === track.id)) {
+          pc.addTrack(track, localStreamRef.current);
+        }
+      });
       const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await pc.setLocalDescription(offer);
       if (onSendSignal) {
@@ -388,7 +412,7 @@ export default function VideoCallModal({
           await sendOffer();
         }
       } else if (signal.type === 'offer' && !isCaller) {
-        if (!pc) {
+        if (!pc || !localStreamRef.current || localStreamRef.current.getTracks().length === 0) {
           pendingOfferRef.current = signal;
           return;
         }

@@ -47,6 +47,7 @@ export default function VoiceCallModal({
   const pcRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const remoteAudioCtxRef = useRef(null);
+  const remoteAudioGainRef = useRef(null);
 
   const audioCtxRef = useRef(null);
   const animFrameRef = useRef(null);
@@ -210,6 +211,12 @@ export default function VoiceCallModal({
         // Ensure all local audio tracks are active
         stream.getAudioTracks().forEach(t => { t.enabled = true; });
 
+        if (pendingOfferRef.current) {
+          const off = pendingOfferRef.current;
+          pendingOfferRef.current = null;
+          handleSignal(off);
+        }
+
         // Setup Audio Analyser for local voice visualization
         try {
           const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -259,10 +266,11 @@ export default function VoiceCallModal({
           const remoteStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
           remoteStreamRef.current = remoteStream;
 
+          // 1. Play HTML5 Audio element
           if (remoteAudioRef.current) {
             remoteAudioRef.current.srcObject = remoteStream;
             remoteAudioRef.current.muted = false;
-            remoteAudioRef.current.volume = 1.0;
+            remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
             const playPromise = remoteAudioRef.current.play();
             if (playPromise !== undefined) {
               playPromise.catch(e => {
@@ -270,7 +278,7 @@ export default function VoiceCallModal({
                 const resumeVoice = () => {
                   if (remoteAudioRef.current) {
                     remoteAudioRef.current.muted = false;
-                    remoteAudioRef.current.volume = 1.0;
+                    remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
                     remoteAudioRef.current.play().catch(() => {});
                   }
                   window.removeEventListener('click', resumeVoice);
@@ -282,7 +290,7 @@ export default function VoiceCallModal({
             }
           }
 
-          // Audio Analyser for voice wave visualizer (Connect to Analyser ONLY, never to destination)
+          // 2. Play through Web Audio API Destination (Guarantees loud, clear audio on Android WebView and desktop)
           try {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
@@ -294,6 +302,12 @@ export default function VoiceCallModal({
             }
 
             const source = actx.createMediaStreamSource(remoteStream);
+            const gainNode = actx.createGain();
+            gainNode.gain.value = isSpeakerOn ? 1.0 : 0.0;
+            source.connect(gainNode);
+            gainNode.connect(actx.destination);
+            remoteAudioGainRef.current = gainNode;
+
             const analyser = actx.createAnalyser();
             analyser.fftSize = 256;
             source.connect(analyser);
@@ -308,8 +322,16 @@ export default function VoiceCallModal({
             };
             updateRemoteVoice();
           } catch (err) {
-            console.warn('Web Audio meter warning:', err);
+            console.warn('Web Audio route warning:', err);
           }
+
+          // 3. Notify Native Android Bridge if present
+          try {
+            if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
+              window.NativeVoiceCall.startVoiceCall();
+              window.NativeVoiceCall.setSpeakerphoneOn(true);
+            }
+          } catch {}
         };
 
         // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
@@ -379,23 +401,21 @@ export default function VoiceCallModal({
   const sendOffer = async () => {
     if (hasSentOfferRef.current) return;
     const pc = pcRef.current;
-    if (!pc) {
+    if (!pc || !localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0) {
       setTimeout(() => {
         if (!hasSentOfferRef.current) sendOffer();
-      }, 150);
+      }, 120);
       return;
     }
     try {
       hasSentOfferRef.current = true;
-      if (localStreamRef.current) {
-        localStreamRef.current.getAudioTracks().forEach(track => {
-          track.enabled = !isMuted;
-          const senders = pc.getSenders ? pc.getSenders() : [];
-          if (!senders.some(s => s.track && s.track.id === track.id)) {
-            pc.addTrack(track, localStreamRef.current);
-          }
-        });
-      }
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !isMuted;
+        const senders = pc.getSenders ? pc.getSenders() : [];
+        if (!senders.some(s => s.track && s.track.id === track.id)) {
+          pc.addTrack(track, localStreamRef.current);
+        }
+      });
       const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
       await pc.setLocalDescription(offer);
       if (onSendSignal) {
@@ -453,7 +473,7 @@ export default function VoiceCallModal({
           await sendOffer();
         }
       } else if (signal.type === 'offer' && !isCaller) {
-        if (!pc) {
+        if (!pc || !localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0) {
           pendingOfferRef.current = signal;
           return;
         }
@@ -533,6 +553,14 @@ export default function VoiceCallModal({
       remoteAudioRef.current.muted = !isSpeakerOn;
       remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
     }
+    if (remoteAudioGainRef.current) {
+      remoteAudioGainRef.current.gain.value = isSpeakerOn ? 1.0 : 0.0;
+    }
+    try {
+      if (window.NativeVoiceCall && window.NativeVoiceCall.setSpeakerphoneOn) {
+        window.NativeVoiceCall.setSpeakerphoneOn(isSpeakerOn);
+      }
+    } catch {}
   }, [isSpeakerOn]);
 
   const formatTimer = (seconds) => {
