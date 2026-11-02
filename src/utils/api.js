@@ -15,6 +15,7 @@ function getApiCandidates() {
     
     candidates.push('http://localhost:3001/api');
     candidates.push('http://127.0.0.1:3001/api');
+    candidates.push('http://10.83.249.35:3001/api');
     candidates.push('http://10.101.25.35:3001/api');
     candidates.push('http://10.0.2.2:3001/api');
 
@@ -117,13 +118,13 @@ export function getOfflineUsersDB() {
   try {
     const saved = localStorage.getItem('securechat_all_users_db');
     if (!saved) {
-      localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
-      return [];
+      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
+      return DEFAULT_SAVED_USERS;
     }
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
-      return [];
+      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
+      return DEFAULT_SAVED_USERS;
     }
     // Filter out any legacy dummy mock accounts and sanitize presence
     const filtered = parsed

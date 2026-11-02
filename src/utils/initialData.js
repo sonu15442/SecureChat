@@ -8,7 +8,28 @@ export const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=250&q=80'
 ];
 
-export const DEFAULT_SAVED_USERS = [];
+export const DEFAULT_SAVED_USERS = [
+  {
+    id: "user_1792685085878_5zl5",
+    name: "Sonu Mobile",
+    username: "@sonupanigrahi029",
+    email: "sonupanigrahi029@gmail.com",
+    phone: "",
+    bio: "My Rules🥶🥵",
+    status: "offline",
+    isOnline: false
+  },
+  {
+    id: "user_1792676522906_o38f",
+    name: "Sonu Web",
+    username: "@mcsonu143",
+    email: "mcsonu143@gmail.com",
+    phone: "",
+    bio: "Hey there! I am using SecureChat.",
+    status: "offline",
+    isOnline: false
+  }
+];
 
 export const DEFAULT_SETTINGS = {
   linkSecurity: 'strict',

@@ -82,9 +82,8 @@ export default function AppIntroSplash({ onComplete }) {
     <div
       id="securechat-opening-splash"
       onClick={handleDismiss}
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center p-6 bg-[#060b10] select-none cursor-pointer transition-all duration-500 overflow-hidden ${
-        fading ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'
-      }`}
+      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center p-6 bg-[#060b10] select-none cursor-pointer transition-all duration-500 overflow-hidden ${fading ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'
+        }`}
     >
       {/* Background with Orange & White Ambient Glow */}
       <div
@@ -108,7 +107,7 @@ export default function AppIntroSplash({ onComplete }) {
 
       {/* Center Shield & Brand Composition */}
       <div className="relative flex flex-col items-center justify-center z-10 space-y-7 max-w-sm w-full">
-        
+
         <div className="relative flex items-center justify-center">
           {/* Outer Orange & White Holographic Counter-Rotating Rings */}
           <div className="absolute w-44 h-44 rounded-full border border-[#f97316]/35 border-dashed animate-spin [animation-duration:14s]" />
@@ -118,7 +117,7 @@ export default function AppIntroSplash({ onComplete }) {
           {/* Hexagonal Glowing Orange & White Frame */}
           <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl p-1 bg-gradient-to-tr from-[#f97316] via-orange-400 to-white shadow-[0_0_55px_rgba(249,115,22,0.45)] flex items-center justify-center transform transition-transform hover:scale-105">
             <div className="w-full h-full rounded-[22px] bg-[#09121a] flex items-center justify-center backdrop-blur-xl border border-white/15 relative overflow-hidden">
-              
+
               {/* Vertical Laser Scanner Beam moving across shield in bright orange & white */}
               <div
                 className="absolute left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-white to-transparent shadow-[0_0_14px_#f97316] animate-pulse"
@@ -157,7 +156,7 @@ export default function AppIntroSplash({ onComplete }) {
                 <span className="text-[#f97316]">{introCipher.slice(6)}</span>
               </h1>
             )}
-            
+
             {introStage >= 2 && (
               <span className="absolute -top-1 -right-3 flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f97316] opacity-75"></span>
