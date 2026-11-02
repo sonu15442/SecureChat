@@ -137,7 +137,8 @@ export default function ChatPanel({
   theme = 'dark',
   onToggleTheme,
   onOpenSettings,
-  onClearChat
+  onClearChat,
+  onMarkAsRead
 }) {
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
@@ -152,6 +153,7 @@ export default function ChatPanel({
   const [showEncryptionInfo, setShowEncryptionInfo] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showLaptopWebcam, setShowLaptopWebcam] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [emojiSearch, setEmojiSearch] = useState('');
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -307,6 +309,20 @@ export default function ChatPanel({
   useEffect(() => {
     scrollToBottom();
   }, [displayedMessages]);
+
+  // Live auto-mark unread incoming messages as read while ChatPanel is open
+  useEffect(() => {
+    if (!targetUser?.id || !currentUser?.id || !Array.isArray(messages)) return;
+    const unread = messages.filter(
+      m => m.senderId === targetUser.id && m.recipientId === currentUser.id && m.status !== 'read'
+    );
+    if (unread.length > 0) {
+      const ids = unread.map(m => m.id);
+      if (onMarkAsRead) {
+        onMarkAsRead(ids, targetUser.id);
+      }
+    }
+  }, [messages, targetUser?.id, currentUser?.id, onMarkAsRead]);
 
   // Handle outside click for emoji picker and three dots menu
   useEffect(() => {
@@ -1287,7 +1303,96 @@ export default function ChatPanel({
         )}
 
         {/* Main Input Container: Mobile Responsive with Always-Visible Send Button */}
-        <div className="p-1.5 md:p-2 rounded-2xl bg-[#14202a] border border-slate-700/60 shadow-xl space-y-1.5 w-full min-w-0">
+        <div className="relative p-1.5 md:p-2 rounded-2xl bg-[#14202a] border border-slate-700/60 shadow-xl space-y-1.5 w-full min-w-0">
+          {/* WhatsApp-Style Floating Attachment Menu */}
+          {showAttachmentMenu && (
+            <div className="absolute bottom-full left-2 sm:left-4 mb-3 p-3 bg-[#111b21] border border-slate-700/80 rounded-2xl shadow-2xl z-50 animate-fade-in flex flex-wrap gap-2 sm:gap-3 max-w-[280px] sm:max-w-sm backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachmentMenu(false);
+                  documentFileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer w-14 sm:w-16"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-md">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300">Document</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachmentMenu(false);
+                  handleCameraClick();
+                }}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer w-14 sm:w-16"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-md">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300">Camera</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachmentMenu(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer w-14 sm:w-16"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shadow-md">
+                  <ImageIcon className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300">Gallery</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachmentMenu(false);
+                  videoFileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer w-14 sm:w-16"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shadow-md">
+                  <Video className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300">Video</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachmentMenu(false);
+                  audioFileInputRef.current?.click();
+                }}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer w-14 sm:w-16"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#f97316]/20 border border-[#f97316]/40 flex items-center justify-center text-[#f97316] shadow-md">
+                  <Headphones className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300">Audio</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAttachmentMenu(false);
+                  handleShareLiveLocation();
+                }}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer w-14 sm:w-16"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-md">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-300">Location</span>
+              </button>
+            </div>
+          )}
+
           {/* Row 1: Emoji, Input/Record Bar, Paperclip, Camera, Mic Record, Circular Orange Send */}
           <div className="flex items-center gap-1 md:gap-2 w-full min-w-0">
             <button
@@ -1365,7 +1470,7 @@ export default function ChatPanel({
               type="file"
               ref={documentFileInputRef}
               onChange={handleDocumentFileChange}
-              accept="*/*"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,application/*,text/*,*/*"
               className="hidden"
             />
             {/* Device Video File Input */}
@@ -1381,8 +1486,10 @@ export default function ChatPanel({
               <>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-1.5 md:p-2 text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+                  onClick={() => setShowAttachmentMenu(prev => !prev)}
+                  className={`p-1.5 md:p-2 transition cursor-pointer shrink-0 ${
+                    showAttachmentMenu ? 'text-[#f97316]' : 'text-slate-400 hover:text-white'
+                  }`}
                   title="Attach File"
                 >
                   <Paperclip className="w-5 h-5" />

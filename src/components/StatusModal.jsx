@@ -165,7 +165,7 @@ export default function StatusModal({ currentUser, onClose, onStatusCreated }) {
             type="button"
             onClick={() => {
               setActiveTab('media');
-              if (!mediaPreview && mediaInputRef.current) mediaInputRef.current.click();
+              if (!mediaPreview && imageInputRef.current) imageInputRef.current.click();
             }}
             className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 ${
               activeTab === 'media'

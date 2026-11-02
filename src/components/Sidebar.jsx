@@ -68,6 +68,7 @@ export default function Sidebar({
   theme = 'dark',
   onToggleTheme,
   callHistory = [],
+  messages = [],
   onClearCallHistory,
   friends = [],
   onFollowUser,
@@ -207,6 +208,30 @@ export default function Sidebar({
       return onlineUsers.some(o => (typeof o === 'string' ? o === user.id : o?.id === user.id));
     }
     return false;
+  };
+
+  const getLastMessageStatus = (userId) => {
+    if (!Array.isArray(messages) || !currentUser?.id || !userId) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.senderId === currentUser.id && m.recipientId === userId) {
+        return m.status || 'sent';
+      }
+    }
+    return null;
+  };
+
+  const renderStatusIcon = (status) => {
+    if (!status) return null;
+    switch (status) {
+      case 'read':
+        return <CheckCheck className="w-4 h-4 text-[#f97316] shrink-0" title="Seen" />;
+      case 'delivered':
+        return <CheckCheck className="w-4 h-4 text-slate-400 shrink-0" title="Delivered (Recipient online)" />;
+      case 'sent':
+      default:
+        return <Check className="w-4 h-4 text-slate-400 shrink-0" title="Sent (Recipient offline)" />;
+    }
   };
 
   return (
@@ -895,7 +920,7 @@ export default function Sidebar({
                                 {unread}
                               </span>
                             ) : (
-                              <CheckCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                              renderStatusIcon(getLastMessageStatus(user.id))
                             )}
                           </div>
                         </div>

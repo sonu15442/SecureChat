@@ -750,6 +750,37 @@ export async function clearMessagesFromDb(userId, targetId) {
   return remaining;
 }
 
+export async function updateMessageStatusInDb(messageIds, status) {
+  if (!Array.isArray(messageIds) || messageIds.length === 0 || !status) return 0;
+
+  if (isDbConnected && pool) {
+    try {
+      const placeholders = messageIds.map(() => '?').join(',');
+      await pool.query(
+        `UPDATE messages SET status = ? WHERE id IN (${placeholders})`,
+        [status, ...messageIds]
+      );
+    } catch (err) {
+      console.error('[MySQL Error] updateMessageStatusInDb failed:', err.message);
+    }
+  }
+
+  const messages = loadMessagesFromFile();
+  let updatedCount = 0;
+  for (const m of messages) {
+    if (messageIds.includes(m.id)) {
+      if (status === 'read' || (status === 'delivered' && m.status !== 'read')) {
+        m.status = status;
+        updatedCount++;
+      }
+    }
+  }
+  if (updatedCount > 0) {
+    saveMessagesToFile(messages);
+  }
+  return updatedCount;
+}
+
 export function getDbHealth() {
   return {
     connected: isDbConnected,

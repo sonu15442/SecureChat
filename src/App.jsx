@@ -29,6 +29,7 @@ import {
   fetchAllUsers,
   fetchStoredMessages,
   saveStoredMessage,
+  updateMessageStatusBackend,
   clearChatMessages,
   clearAllDatabaseData,
   syncUserWithBackend,
@@ -341,6 +342,7 @@ function App() {
 
         const newStatus = isViewing ? 'read' : 'delivered';
         broadcastReadReceipt([msg.id], newStatus, currentUser.id, msg.senderId);
+        updateMessageStatusBackend([msg.id], newStatus, currentUser.id, msg.senderId);
 
         // If not actively viewing that chat, track unread count
         if (!isViewing && msg.recipientId && msg.recipientId === currentUser.id) {
@@ -366,14 +368,22 @@ function App() {
     const unsub3 = on('presence', (users) => {
       setOnlineUsers(users);
       const onlineIds = users.map(u => u.id);
-      setMessages(prev => prev.map(m => {
-        if (m.senderId === currentUser.id && m.status === 'sent') {
-          if (m.recipientId === 'global' || onlineIds.includes(m.recipientId)) {
-            return { ...m, status: 'delivered' };
+      setMessages(prev => {
+        const upgradedIds = [];
+        const next = prev.map(m => {
+          if (m.senderId === currentUser.id && m.status === 'sent') {
+            if (m.recipientId === 'global' || onlineIds.includes(m.recipientId)) {
+              upgradedIds.push(m.id);
+              return { ...m, status: 'delivered' };
+            }
           }
+          return m;
+        });
+        if (upgradedIds.length > 0) {
+          updateMessageStatusBackend(upgradedIds, 'delivered', currentUser.id, 'all');
         }
-        return m;
-      }));
+        return next;
+      });
     });
 
     // Listen for user joined
@@ -502,12 +512,26 @@ function App() {
             (currentTarget === 'global' && (!msg.recipientId || msg.recipientId === 'global')) ||
             (currentTarget.id === msg.senderId && msg.recipientId === currentUser.id)
           );
+          const newStatus = isViewing ? 'read' : 'delivered';
+          broadcastReadReceipt([msg.id], newStatus, currentUser.id, msg.senderId);
+          updateMessageStatusBackend([msg.id], newStatus, currentUser.id, msg.senderId);
+
           if (!isViewing && msg.recipientId && msg.recipientId === currentUser.id) {
             setUnreadCounts(prev => ({
               ...prev,
               [msg.senderId]: (prev[msg.senderId] || 0) + 1
             }));
           }
+        }
+      } else if (event.type === 'read_receipt' && event.payload) {
+        const { messageIds, status } = event.payload;
+        if (Array.isArray(messageIds) && status) {
+          setMessages(prev => prev.map(m => {
+            if (messageIds.includes(m.id)) {
+              return { ...m, status };
+            }
+            return m;
+          }));
         }
       } else if (event.type === 'user_registered' || event.type === 'user_updated') {
         const u = event.payload?.user;
@@ -736,6 +760,7 @@ function App() {
 
         if (unreadIds.length > 0) {
           broadcastReadReceipt(unreadIds, 'read', currentUser.id, target.id);
+          updateMessageStatusBackend(unreadIds, 'read', currentUser.id, target.id);
           return prev.map(m => unreadIds.includes(m.id) ? { ...m, status: 'read' } : m);
         }
         return prev;
@@ -1187,6 +1212,7 @@ function App() {
             onToggleTheme={handleToggleTheme}
             callHistory={callHistory}
             onClearCallHistory={handleClearCallHistory}
+            messages={messages}
             friends={friends}
             onFollowUser={async (targetUser) => {
               if (!currentUser?.id || !targetUser?.id) return;
@@ -1230,6 +1256,11 @@ function App() {
             onToggleTheme={handleToggleTheme}
             onOpenSettings={() => setShowSettings(true)}
             onClearChat={handleClearCurrentChat}
+            onMarkAsRead={(unreadIds, senderId) => {
+              broadcastReadReceipt(unreadIds, 'read', currentUser.id, senderId);
+              updateMessageStatusBackend(unreadIds, 'read', currentUser.id, senderId);
+              setMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, status: 'read' } : m));
+            }}
           />
         </div>
       </div>

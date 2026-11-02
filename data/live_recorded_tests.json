@@ -1,32 +1,5 @@
 [
   {
-    "id": "test_1792779556413_ncw1",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T18:19:16.414Z"
-  },
-  {
-    "id": "test_1792779566009_q9ld",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Panigrahi",
-    "duration": 0.08,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T18:19:26.009Z"
-  },
-  {
-    "id": "test_1792779573563_vgwu",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Calls rail tab",
-    "duration": 0.1,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-23T18:19:33.563Z"
-  },
-  {
     "id": "test_1792779575474_rftb",
     "category": "Navigation",
     "name": "Selenium Website: User switches to Chats rail tab",
@@ -1798,5 +1771,32 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-11-01T13:47:00.996Z"
+  },
+  {
+    "id": "test_1793628914192_dmgz",
+    "category": "Authentication",
+    "name": "Appium Android: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChatMobile",
+    "timestamp": "2026-11-02T14:15:14.193Z"
+  },
+  {
+    "id": "test_1793629013599_ermq",
+    "category": "Authentication",
+    "name": "Appium Android: Password successfully reset via Gmail OTP",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChatMobile",
+    "timestamp": "2026-11-02T14:16:53.600Z"
+  },
+  {
+    "id": "test_1793629022064_l72h",
+    "category": "Authentication",
+    "name": "Appium Android: Login successful",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChatMobile",
+    "timestamp": "2026-11-02T14:17:02.064Z"
   }
 ]

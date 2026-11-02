@@ -870,6 +870,39 @@ export async function saveStoredMessage(message) {
 }
 
 /**
+ * Update message status on backend and local storage (cross-device sync)
+ */
+export async function updateMessageStatusBackend(messageIds, status, readerId, senderId) {
+  if (!Array.isArray(messageIds) || messageIds.length === 0 || !status) return;
+
+  // 1. Update localStorage cache
+  try {
+    const localMsgs = JSON.parse(localStorage.getItem('securechat_all_messages') || '[]');
+    let modified = false;
+    for (const m of localMsgs) {
+      if (messageIds.includes(m.id)) {
+        if (status === 'read' || (status === 'delivered' && m.status !== 'read')) {
+          m.status = status;
+          modified = true;
+        }
+      }
+    }
+    if (modified) {
+      localStorage.setItem('securechat_all_messages', JSON.stringify(localMsgs));
+    }
+  } catch {}
+
+  // 2. Send to backend server
+  try {
+    await fetchWithFallback('/messages/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageIds, status, readerId, senderId })
+    });
+  } catch {}
+}
+
+/**
  * Clear chat messages for a specific conversation or global chat
  */
 export async function clearChatMessages(userId, targetId) {

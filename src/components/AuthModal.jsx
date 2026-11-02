@@ -547,10 +547,10 @@ export default function AuthModal({ onLogin, theme = 'light', onToggleTheme, ski
   }
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in select-none ${
+    <div className={`fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-6 sm:pt-4 overflow-y-auto backdrop-blur-sm animate-fade-in select-none ${
       isLight ? 'bg-black/40 text-slate-900' : 'bg-black/70 text-[#e9edef]'
     }`}>
-      <div className={`w-full max-w-md rounded-2xl p-6 md:p-7 border shadow-xl relative transition-all duration-200 ${
+      <div className={`w-full max-w-md rounded-2xl p-5 sm:p-7 border shadow-xl relative transition-all duration-200 mt-2 sm:my-auto ${
         isLight
           ? 'bg-white border-[#e9edef]'
           : 'bg-[#202c33] border-[#2a3942]'

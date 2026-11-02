@@ -21,6 +21,7 @@ import {
   getDbHealth,
   clearAllUsersFromDb,
   clearMessagesFromDb,
+  updateMessageStatusInDb,
   updateUserLastSeen
 } from './db.js';
 
@@ -1148,6 +1149,29 @@ app.post('/api/messages', async (req, res) => {
   } catch (err) {
     console.error('Save message error:', err);
     res.status(500).json({ error: 'Failed to save message.' });
+  }
+});
+
+/**
+ * POST /api/messages/status
+ * Updates message status (sent -> delivered -> read) and broadcasts cross-device via SSE
+ */
+app.post('/api/messages/status', async (req, res) => {
+  try {
+    const { messageIds, status, readerId, senderId } = req.body || {};
+    if (!Array.isArray(messageIds) || messageIds.length === 0 || !status) {
+      return res.status(400).json({ error: 'messageIds array and status are required.' });
+    }
+
+    const updatedCount = await updateMessageStatusInDb(messageIds, status);
+
+    // Broadcast across all connected Web & Mobile devices via SSE
+    broadcastEvent('read_receipt', { messageIds, status, readerId, senderId });
+
+    res.json({ success: true, updatedCount });
+  } catch (err) {
+    console.error('Update message status error:', err);
+    res.status(500).json({ error: 'Failed to update message status.' });
   }
 });
 
