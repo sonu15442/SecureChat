@@ -62,7 +62,20 @@ export default function VideoCallModal({
     recordAction('Session Management', 'User terminates video call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     stopAllRingtones();
     playEndedChime();
-    if (onEndCall) onEndCall(call, duration);
+
+    // Directly dispatch termination signal over the network so other side hangs up with zero lag
+    if (onSendSignal && call?.callId) {
+      const targetId = isCaller ? (call?.recipient?.id || call?.recipientId) : (call?.caller?.id || call?.callerId);
+      onSendSignal({
+        type: (callStatus === 'ringing' && isCaller && duration === 0) ? 'call_cancel' : 'call_end',
+        callId: call.callId,
+        recipientId: targetId,
+        targetId: targetId,
+        duration
+      });
+    }
+
+    if (onEndCall) onEndCall({ ...call, status: callStatus }, duration);
     else if (onClose) onClose();
   };
 

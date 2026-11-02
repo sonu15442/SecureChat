@@ -64,7 +64,20 @@ export default function VoiceCallModal({
     recordAction('Session Management', 'User terminates voice call session', { duration: 0.04, status: 'PASSED', source: 'SecureChat' });
     stopAllRingtones();
     playEndedChime();
-    if (onEndCall) onEndCall(call, duration);
+
+    // Directly dispatch termination signal over the network so other side hangs up with zero lag
+    if (onSendSignal && call?.callId) {
+      const targetId = isCaller ? (call?.recipient?.id || call?.recipientId) : (call?.caller?.id || call?.callerId);
+      onSendSignal({
+        type: (callStatus === 'ringing' && isCaller && duration === 0) ? 'call_cancel' : 'call_end',
+        callId: call.callId,
+        recipientId: targetId,
+        targetId: targetId,
+        duration
+      });
+    }
+
+    if (onEndCall) onEndCall({ ...call, status: callStatus }, duration);
     else if (onClose) onClose();
   };
 
@@ -118,10 +131,15 @@ export default function VoiceCallModal({
           res.status === 'connected' ||
           (Array.isArray(res.signals) && res.signals.some(s => s && s.type === 'call_accepted'))
         ) {
+          stopAllRingtones();
           if (callStatus === 'ringing') {
-            stopAllRingtones();
             setCallStatus('connected');
             playConnectedChime();
+            try {
+              if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
+                window.NativeVoiceCall.startVoiceCall();
+              }
+            } catch {}
             if (isCaller) sendOffer();
           }
         }
@@ -526,9 +544,14 @@ export default function VoiceCallModal({
     }
 
     if (signal.type === 'call_accepted') {
-      setCallStatus('connected');
       stopAllRingtones();
+      setCallStatus('connected');
       playConnectedChime();
+      try {
+        if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
+          window.NativeVoiceCall.startVoiceCall();
+        }
+      } catch {}
       if (isCaller) {
         await sendOffer();
       }

@@ -865,19 +865,21 @@ function App() {
 
     const currentCall = activeCallRef.current;
     const currentIncoming = incomingCallRef.current;
-    const isMatchingCall = (currentCall && currentCall.callId === signal.callId) ||
-                           (currentIncoming && currentIncoming.callId === signal.callId);
-    const isTargetMe = String(signal.recipientId) === String(currentUser.id) ||
+    const isMatchingCall = (currentCall && (!signal.callId || currentCall.callId === signal.callId)) ||
+                           (currentIncoming && (!signal.callId || currentIncoming.callId === signal.callId));
+    const isTargetMe = !signal.recipientId && !signal.targetId ||
+                       String(signal.recipientId) === String(currentUser.id) ||
                        String(signal.targetId) === String(currentUser.id);
 
     if (signal.type === 'call_invite') {
-      if (String(signal.recipientId || signal.targetId) === String(currentUser.id)) {
+      if (isTargetMe) {
         setIncomingCall(signal);
       }
     } else if (signal.type === 'call_cancel' || signal.type === 'call_reject' || signal.type === 'call_end') {
       // If either party cancels, declines, or hangs up, terminate call UI and silence ringtones immediately on both devices
-      if (isTargetMe || isMatchingCall) {
+      if (isTargetMe || isMatchingCall || currentCall || currentIncoming) {
         stopAllRingtones();
+        playEndedChime();
         if (currentCall) {
           const dur = callConnectTimeRef.current ? Math.floor((Date.now() - callConnectTimeRef.current) / 1000) : 0;
           const target = currentCall.isCaller ? currentCall.recipient : currentCall.caller;
@@ -910,6 +912,7 @@ function App() {
     } else if (signal.type === 'call_accepted') {
       if (isTargetMe || isMatchingCall) {
         stopAllRingtones();
+        playConnectedChime();
         callConnectTimeRef.current = Date.now();
         setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
         setLatestIncomingSignal(signal);
@@ -1088,31 +1091,19 @@ function App() {
       status
     });
 
-    if (currentCall.isCaller && currentCall.status === 'ringing') {
-      const cancelPayload = {
-        type: 'call_cancel',
-        callId: currentCall.callId,
-        recipientId: targetId,
-        targetId,
-        senderId: currentUser.id
-      };
-      try {
-        broadcastCallSignal(cancelPayload);
-      } catch {}
-      sendCallSignal(cancelPayload).catch(() => {});
-    } else {
-      const endPayload = {
-        type: 'call_end',
-        callId: currentCall.callId,
-        recipientId: targetId,
-        targetId,
-        senderId: currentUser.id
-      };
-      try {
-        broadcastCallSignal(endPayload);
-      } catch {}
-      sendCallSignal(endPayload).catch(() => {});
-    }
+    const endSignalType = (currentCall.isCaller && currentCall.status === 'ringing' && dur === 0) ? 'call_cancel' : 'call_end';
+    const endPayload = {
+      type: endSignalType,
+      callId: currentCall.callId,
+      recipientId: targetId,
+      targetId,
+      senderId: currentUser.id,
+      duration: dur
+    };
+    try {
+      broadcastCallSignal(endPayload);
+    } catch {}
+    sendCallSignal(endPayload).catch(() => {});
 
     setActiveCall(null);
     setLatestIncomingSignal(null);

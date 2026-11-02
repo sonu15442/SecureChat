@@ -8,27 +8,13 @@ import { saveMessageToDb, saveMessagesToDb, getAllMessagesFromDb, clearMessagesF
 function getApiCandidates() {
   const candidates = [];
 
-  // 1. USB reverse port forwarding & local dev endpoints (Instant connection when connected via USB or running locally)
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin || '';
-    const hostname = window.location.hostname || '';
-    
-    candidates.push('http://localhost:3001/api');
-    candidates.push('http://127.0.0.1:3001/api');
-    candidates.push('http://10.83.249.35:3001/api');
-    candidates.push('http://10.101.25.35:3001/api');
-    candidates.push('http://10.0.2.2:3001/api');
-
-    // In web browser
-    if (!origin.includes('capacitor')) {
-      candidates.push('/api');
+  // 1. Last known working server (HIGHEST PRIORITY for zero-latency instant connects)
+  try {
+    const lastActive = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_last_active_server') : null;
+    if (lastActive && lastActive.trim()) {
+      candidates.push(lastActive.trim());
     }
-    
-    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      candidates.push(`http://${hostname}:3001/api`);
-      candidates.push(`http://${hostname}:5173/api`);
-    }
-  }
+  } catch {}
 
   // 2. Custom server IP configured in Settings (e.g. for phone on WiFi)
   try {
@@ -39,20 +25,35 @@ function getApiCandidates() {
     }
   } catch {}
 
-  // 3. Last known working server
-  try {
-    const lastActive = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_last_active_server') : null;
-    if (lastActive && lastActive.trim()) {
-      candidates.push(lastActive.trim());
+  // 3. Known LAN Wi-Fi IP for direct cross-device mobile <-> web communication
+  candidates.push('http://10.83.249.35:3001/api');
+
+  // 4. USB reverse port forwarding & local dev endpoints
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin || '';
+    const hostname = window.location.hostname || '';
+    
+    candidates.push('http://localhost:3001/api');
+    candidates.push('http://127.0.0.1:3001/api');
+    candidates.push('http://10.0.2.2:3001/api');
+
+    // In web browser
+    if (!origin.includes('capacitor') && !origin.startsWith('file:')) {
+      candidates.push('/api');
     }
-  } catch {}
+    
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      candidates.push(`http://${hostname}:3001/api`);
+      candidates.push(`http://${hostname}:5173/api`);
+    }
+  }
 
   if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL) {
     const clean = BACKEND_URL.endsWith('/api') ? BACKEND_URL : `${BACKEND_URL}/api`;
     candidates.push(clean);
   }
 
-  // Remove duplicate URLs
+  // Remove duplicate URLs while preserving strict priority
   return Array.from(new Set(candidates));
 }
 
@@ -64,9 +65,10 @@ async function fetchWithFallback(endpoint, options = {}) {
   let lastError = null;
 
   for (const base of candidates) {
-    // Responsive timeout: 3s for local network probes, longer for cloud backend or explicit options
+    // Ultra-fast failover for time-critical call signaling (800ms) vs normal requests
+    const isCallEndpoint = endpoint.includes('/call/');
     const isCloud = base.includes('onrender.com') || base.includes('https://');
-    const defaultTimeout = isCloud ? 6000 : 2500;
+    const defaultTimeout = isCallEndpoint ? 900 : (isCloud ? 6000 : 2500);
     const timeoutMs = typeof options.timeout === 'number' ? options.timeout : defaultTimeout;
 
     const controller = new AbortController();
@@ -246,20 +248,16 @@ export function initRealtimeEventStream(onEvent) {
       };
 
       es.onerror = () => {
-        if (es.readyState === EventSource.CONNECTING) {
-          // Browser is auto-reconnecting; keep socket alive
-          return;
-        }
-        es.close();
+        try { es.close(); } catch {}
         candidateIndex++;
         if (candidateIndex < candidates.length) {
           connect();
         } else {
-          // Reset and retry first candidate after 2s
+          // Reset and retry first candidate after 1.5s
           setTimeout(() => {
             candidateIndex = 0;
             connect();
-          }, 2000);
+          }, 1500);
         }
       };
     } catch {
@@ -994,10 +992,10 @@ export async function sendCallSignal(signalData) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(signalData),
-      timeout: 3000
+      timeout: 1500
     });
   } catch (err) {
-    // If backend is offline, BroadcastChannel will still handle local multi-tab calls
+    // If backend is unreachable, BroadcastChannel will still handle local multi-tab calls
   }
 }
 
@@ -1009,7 +1007,7 @@ export async function syncCallSignals(callId, since = 0, userId = '') {
   if (!callId) return null;
   try {
     const { data } = await fetchWithFallback(`/call/sync?callId=${encodeURIComponent(callId)}&since=${since}&userId=${encodeURIComponent(userId || '')}`, {
-      timeout: 2000
+      timeout: 1000
     });
     return data || null;
   } catch (err) {
@@ -1025,7 +1023,7 @@ export async function checkActiveCallForUser(userId) {
   if (!userId) return null;
   try {
     const { data } = await fetchWithFallback(`/call/active-for-user?userId=${encodeURIComponent(userId)}`, {
-      timeout: 2000
+      timeout: 1200
     });
     return data?.call || null;
   } catch {

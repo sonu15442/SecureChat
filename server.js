@@ -1021,6 +1021,7 @@ app.post('/api/call/signal', (req, res) => {
 
     const callId = signal.callId || (signal.call && signal.call.callId);
     const now = Date.now();
+    console.log(`[Call Signal] type=${signal.type} callId=${callId} from=${signal.senderId} to=${signal.recipientId || signal.targetId}`);
 
     if (callId) {
       if (!activeCallSignals.has(callId)) {
@@ -1077,9 +1078,10 @@ app.get('/api/call/sync', (req, res) => {
     const call = activeCalls.get(callId);
     const signalsList = activeCallSignals.get(callId) || [];
     const sinceTs = Number(since) || 0;
+    const margin = sinceTs > 800 ? sinceTs - 800 : 0;
 
     const newSignals = signalsList
-      .filter(item => item.timestamp > sinceTs)
+      .filter(item => item.timestamp > margin)
       .map(item => item.signal);
 
     res.json({
@@ -1518,9 +1520,9 @@ app.use((req, res) => {
   }
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
   await initDatabase();
   const users = await getAllUsers();
-  console.log(`\n🔐 SecureChat Backend Server running on port ${PORT}`);
+  console.log(`\n🔐 SecureChat Backend Server running on port ${PORT} (0.0.0.0)`);
   console.log(`📦 ${users.length} registered account(s) loaded in system`);
 });
