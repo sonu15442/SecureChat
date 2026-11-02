@@ -185,39 +185,9 @@ export default function VideoCallModal({
 
     async function initWebRTC() {
       try {
-        let stream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-          });
-        } catch (err1) {
-          console.warn('[WebRTC Video] Advanced constraints failed, trying basic audio/video:', err1);
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        }
-        if (cancelled) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        localStreamRef.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        if (pendingOfferRef.current) {
-          const off = pendingOfferRef.current;
-          pendingOfferRef.current = null;
-          handleSignal(off);
-        }
-
+        // Step 1: Create Peer Connection IMMEDIATELY so pcRef.current is ready
         const pc = new RTCPeerConnection(RTC_CONFIG);
         pcRef.current = pc;
-
-        // Add both audio and video tracks
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
 
         // Remote track arrival (accumulate both audio + video from peer without overwriting)
         pc.ontrack = (event) => {
@@ -261,16 +231,14 @@ export default function VideoCallModal({
             }
           }
 
-          // Direct Web Audio output for guaranteed audio audibility on mobile & desktop
+          // In-memory audio player for guaranteed mobile playback
           try {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            const actx = new AudioCtx();
-            if (actx.state === 'suspended') actx.resume().catch(() => {});
-            const source = actx.createMediaStreamSource(remoteStreamRef.current);
-            const gainNode = actx.createGain();
-            gainNode.gain.value = 1.0;
-            source.connect(gainNode);
-            gainNode.connect(actx.destination);
+            if (!window.__activeVideoCallAudio) {
+              window.__activeVideoCallAudio = new Audio();
+            }
+            window.__activeVideoCallAudio.srcObject = remoteStreamRef.current;
+            window.__activeVideoCallAudio.volume = 1.0;
+            window.__activeVideoCallAudio.play().catch(() => {});
           } catch {}
 
           // Notify native Android bridge
@@ -301,22 +269,44 @@ export default function VideoCallModal({
           }
         };
 
-        if (pendingOfferRef.current) {
-          const off = pendingOfferRef.current;
-          pendingOfferRef.current = null;
-          await handleSignal(off);
+        // Step 2: Access Camera and Microphone
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          });
+        } catch (err1) {
+          console.warn('[WebRTC Video] Advanced constraints failed, trying basic audio/video:', err1);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         }
-        if (pendingAnswerRef.current) {
-          const ans = pendingAnswerRef.current;
-          pendingAnswerRef.current = null;
-          await handleSignal(ans);
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
         }
 
-        // Initiate offer once peer is connected
-        if (isCaller && (call.status === 'connected' || callStatus === 'connected')) {
-          await sendOffer();
+        localStreamRef.current = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+
+        // Add both audio and video tracks
+        stream.getTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
+
+        // Step 3: Now that pc AND localStream are ready, handle pending offer or send caller offer
+        if (isCaller) {
+          if (call.status === 'connected' || callStatus === 'connected') {
+            await sendOffer();
+          }
         } else {
-          processQueuedSignals();
+          if (pendingOfferRef.current) {
+            const off = pendingOfferRef.current;
+            pendingOfferRef.current = null;
+            await handleOffer(off);
+          }
+          await processQueuedSignals();
         }
       } catch (err) {
         if (!cancelled) {
@@ -334,6 +324,16 @@ export default function VideoCallModal({
     return () => {
       cancelled = true;
       stopAllRingtones();
+      try {
+        if (window.__activeVideoCallAudio) {
+          window.__activeVideoCallAudio.pause();
+          window.__activeVideoCallAudio.srcObject = null;
+          window.__activeVideoCallAudio = null;
+        }
+        if (window.NativeVoiceCall && window.NativeVoiceCall.endVoiceCall) {
+          window.NativeVoiceCall.endVoiceCall();
+        }
+      } catch {}
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
       if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(t => t.stop());
       if (pcRef.current) pcRef.current.close();
@@ -376,12 +376,71 @@ export default function VideoCallModal({
 
   const processQueuedSignals = async () => {
     const pc = pcRef.current;
-    if (!pc) return;
+    if (!pc || !pc.remoteDescription) return;
     while (candidateQueue.current.length > 0) {
       const cand = candidateQueue.current.shift();
       try {
         await pc.addIceCandidate(new RTCIceCandidate(cand));
       } catch {}
+    }
+  };
+
+  const handleOffer = async (signal) => {
+    const pc = pcRef.current;
+    if (!pc || !signal?.sdp) return;
+    if (!localStreamRef.current || localStreamRef.current.getTracks().length === 0) {
+      console.log('[WebRTC Video] Offer arrived before local stream ready, queuing offer.');
+      pendingOfferRef.current = signal;
+      return;
+    }
+    try {
+      console.log('[WebRTC Video] Applying remote offer...');
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      setCallStatus('connected');
+      stopAllRingtones();
+      playConnectedChime();
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          track.enabled = track.kind === 'audio' ? !isMuted : isVideoOn;
+          const senders = pc.getSenders ? pc.getSenders() : [];
+          if (!senders.some(s => s.track && s.track.id === track.id)) {
+            pc.addTrack(track, localStreamRef.current);
+          }
+        });
+      }
+
+      await processQueuedSignals();
+
+      const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+      await pc.setLocalDescription(answer);
+      if (onSendSignal) {
+        onSendSignal({
+          type: 'answer',
+          sdp: { type: answer.type, sdp: answer.sdp },
+          callId: call.callId,
+          targetId: targetUser?.id
+        });
+      }
+    } catch (err) {
+      console.error('[WebRTC Video] Error handling offer:', err);
+    }
+  };
+
+  const handleAnswer = async (signal) => {
+    const pc = pcRef.current;
+    if (!pc || !signal?.sdp) return;
+    try {
+      console.log('[WebRTC Video] Applying remote answer...');
+      if (pc.signalingState !== 'stable') {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        setCallStatus('connected');
+        stopAllRingtones();
+        playConnectedChime();
+        await processQueuedSignals();
+      }
+    } catch (err) {
+      console.error('[WebRTC Video] Error handling answer:', err);
     }
   };
 
@@ -397,74 +456,37 @@ export default function VideoCallModal({
       return;
     }
 
-    const sigKey = `${signal.type}_${signal.timestamp || ''}_${signal.candidate?.candidate || ''}_${signal.sdp?.sdp?.slice(0, 30) || ''}`;
-    if (processedSignalsRef.current.has(sigKey)) return;
-    processedSignalsRef.current.add(sigKey);
+    if (signal.type === 'call_accepted') {
+      setCallStatus('connected');
+      stopAllRingtones();
+      playConnectedChime();
+      if (isCaller) {
+        await sendOffer();
+      }
+      return;
+    }
 
-    const pc = pcRef.current;
+    if (signal.type === 'offer' && !isCaller) {
+      await handleOffer(signal);
+      return;
+    }
 
-    try {
-      if (signal.type === 'call_accepted') {
-        setCallStatus('connected');
-        stopAllRingtones();
-        playConnectedChime();
-        if (isCaller) {
-          await sendOffer();
-        }
-      } else if (signal.type === 'offer' && !isCaller) {
-        if (!pc || !localStreamRef.current || localStreamRef.current.getTracks().length === 0) {
-          pendingOfferRef.current = signal;
-          return;
-        }
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        setCallStatus('connected');
-        stopAllRingtones();
-        playConnectedChime();
-        processQueuedSignals();
+    if (signal.type === 'answer' && isCaller) {
+      await handleAnswer(signal);
+      return;
+    }
 
-        if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach(track => {
-            track.enabled = track.kind === 'audio' ? !isMuted : isVideoOn;
-            const senders = pc.getSenders ? pc.getSenders() : [];
-            if (!senders.some(s => s.track && s.track.id === track.id)) {
-              pc.addTrack(track, localStreamRef.current);
-            }
-          });
-        }
-
-        const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-        await pc.setLocalDescription(answer);
-        if (onSendSignal) {
-          onSendSignal({
-            type: 'answer',
-            sdp: { type: answer.type, sdp: answer.sdp },
-            callId: call.callId,
-            targetId: targetUser?.id
-          });
-        }
-      } else if (signal.type === 'answer' && isCaller) {
-        if (!pc) {
-          pendingAnswerRef.current = signal;
-          return;
-        }
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        setCallStatus('connected');
-        stopAllRingtones();
-        playConnectedChime();
-        processQueuedSignals();
-      } else if (signal.type === 'ice_candidate') {
-        if (signal.candidate && (signal.candidate.candidate || typeof signal.candidate === 'object')) {
-          if (pc && pc.remoteDescription) {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-            } catch {}
-          } else {
-            candidateQueue.current.push(signal.candidate);
-          }
+    if (signal.type === 'ice_candidate') {
+      if (signal.candidate && (signal.candidate.candidate || typeof signal.candidate === 'object')) {
+        const pc = pcRef.current;
+        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } catch {}
+        } else {
+          candidateQueue.current.push(signal.candidate);
         }
       }
-    } catch (err) {
-      console.warn('Video call WebRTC signal error:', err);
     }
   };
 

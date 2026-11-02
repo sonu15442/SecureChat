@@ -50,11 +50,11 @@ public class MainActivity extends AppCompatActivity {
         window.setStatusBarColor(Color.parseColor("#0c1317"));
         window.getDecorView().setSystemUiVisibility(0); // White icons on dark bar
 
-        // 2. Initialize native audio manager and set loudspeaker default
+        // 2. Initialize native audio manager
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (audioManager != null) {
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(true);
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+            audioManager.setMicrophoneMute(false);
         }
 
         // 3. Initialize React Native package registry

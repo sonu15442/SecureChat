@@ -188,14 +188,130 @@ export default function VoiceCallModal({
 
     async function initWebRTC() {
       try {
-        // Access user microphone with fallback if advanced constraints fail
+        // Step 1: Create Peer Connection IMMEDIATELY so pcRef.current is ready for any early signals
+        const pc = new RTCPeerConnection(RTC_CONFIG);
+        pcRef.current = pc;
+
+        pc.oniceconnectionstatechange = () => {
+          console.log('[WebRTC Voice] ICE Connection State:', pc.iceConnectionState);
+        };
+        pc.onconnectionstatechange = () => {
+          console.log('[WebRTC Voice] Connection State:', pc.connectionState);
+          if (pc.connectionState === 'closed') {
+            handleEndCallAction();
+          }
+        };
+
+        // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
+        pc.onicecandidate = (event) => {
+          if (event.candidate && onSendSignal) {
+            const cand = event.candidate;
+            const candObj = cand.toJSON ? cand.toJSON() : {
+              candidate: cand.candidate,
+              sdpMid: cand.sdpMid,
+              sdpMLineIndex: cand.sdpMLineIndex,
+              usernameFragment: cand.usernameFragment
+            };
+            onSendSignal({
+              type: 'ice_candidate',
+              candidate: candObj,
+              callId: call.callId,
+              targetId: targetUser?.id
+            });
+          }
+        };
+
+        // Remote track received from peer (User 2 or User 1)
+        pc.ontrack = (event) => {
+          console.log('[WebRTC Voice] Remote track received:', event.track.id, event.track.kind);
+          if (event.track.kind !== 'audio') return;
+          event.track.enabled = true;
+
+          const remoteStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+          remoteStreamRef.current = remoteStream;
+
+          // 1. Play HTML5 Audio element directly with volume=1.0 and user-gesture fallback
+          const playAudio = () => {
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.srcObject = remoteStream;
+              remoteAudioRef.current.muted = false;
+              remoteAudioRef.current.volume = 1.0;
+              const playPromise = remoteAudioRef.current.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(e => {
+                  console.warn('[WebRTC Voice] HTML5 Audio autoplay unlock pending user interaction:', e);
+                  const resumeVoice = () => {
+                    if (remoteAudioRef.current) {
+                      remoteAudioRef.current.muted = false;
+                      remoteAudioRef.current.volume = 1.0;
+                      remoteAudioRef.current.play().catch(() => {});
+                    }
+                    window.removeEventListener('click', resumeVoice);
+                    window.removeEventListener('touchstart', resumeVoice);
+                  };
+                  window.addEventListener('click', resumeVoice, { once: true });
+                  window.addEventListener('touchstart', resumeVoice, { once: true });
+                });
+              }
+            }
+            // In-memory backup Audio element for Android WebView
+            try {
+              if (!window.__activeCallAudio) {
+                window.__activeCallAudio = new Audio();
+              }
+              window.__activeCallAudio.srcObject = remoteStream;
+              window.__activeCallAudio.volume = 1.0;
+              window.__activeCallAudio.play().catch(() => {});
+            } catch {}
+          };
+          playAudio();
+
+          // 2. Audio analyser for visualizer (analyser only, no destination output to prevent echo/cancellation)
+          try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
+              remoteAudioCtxRef.current = new AudioContextClass();
+            }
+            const actx = remoteAudioCtxRef.current;
+            if (actx.state === 'suspended') {
+              actx.resume().catch(() => {});
+            }
+            const source = actx.createMediaStreamSource(remoteStream);
+            const analyser = actx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            const dataArr = new Uint8Array(analyser.frequencyBinCount);
+            const updateRemoteVoice = () => {
+              if (cancelled) return;
+              analyser.getByteFrequencyData(dataArr);
+              const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
+              setRemoteAudioLevel(avg / 255);
+              requestAnimationFrame(updateRemoteVoice);
+            };
+            updateRemoteVoice();
+          } catch (err) {
+            console.warn('[WebRTC Voice] Analyser error:', err);
+          }
+
+          // 3. Notify Native Android Bridge if present
+          try {
+            if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
+              window.NativeVoiceCall.startVoiceCall();
+              window.NativeVoiceCall.setSpeakerphoneOn(true);
+            }
+          } catch {}
+        };
+
+        // Step 2: Access user microphone with maximum voice clarity
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              autoGainControl: true
+              autoGainControl: true,
+              channelCount: 1
             }
           });
         } catch (err1) {
@@ -211,11 +327,10 @@ export default function VoiceCallModal({
         // Ensure all local audio tracks are active
         stream.getAudioTracks().forEach(t => { t.enabled = true; });
 
-        if (pendingOfferRef.current) {
-          const off = pendingOfferRef.current;
-          pendingOfferRef.current = null;
-          handleSignal(off);
-        }
+        // Add local audio tracks to peer connection
+        stream.getAudioTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
 
         // Setup Audio Analyser for local voice visualization
         try {
@@ -238,138 +353,18 @@ export default function VoiceCallModal({
           updateLocalVoiceLevel();
         } catch {}
 
-        // Create Peer Connection
-        const pc = new RTCPeerConnection(RTC_CONFIG);
-        pcRef.current = pc;
-
-        pc.oniceconnectionstatechange = () => {
-          console.log('[WebRTC Voice] ICE Connection State:', pc.iceConnectionState);
-        };
-        pc.onconnectionstatechange = () => {
-          console.log('[WebRTC Voice] Connection State:', pc.connectionState);
-          if (pc.connectionState === 'closed') {
-            handleEndCallAction();
+        // Step 3: Now that both pc and localStream are ready, handle pending offer or send caller offer
+        if (isCaller) {
+          if (call.status === 'connected' || callStatus === 'connected') {
+            await sendOffer();
           }
-        };
-
-        // Add local tracks to peer connection
-        stream.getAudioTracks().forEach(track => {
-          track.enabled = true;
-          pc.addTrack(track, stream);
-        });
-
-        // Remote track received from peer (User 2 or User 1)
-        pc.ontrack = (event) => {
-          console.log('[WebRTC Voice] Remote track received:', event.track.id, event.track.kind);
-          event.track.enabled = true;
-
-          const remoteStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-          remoteStreamRef.current = remoteStream;
-
-          // 1. Play HTML5 Audio element
-          if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = remoteStream;
-            remoteAudioRef.current.muted = false;
-            remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
-            const playPromise = remoteAudioRef.current.play();
-            if (playPromise !== undefined) {
-              playPromise.catch(e => {
-                console.warn('HTML5 Audio autoplay unlock pending user interaction:', e);
-                const resumeVoice = () => {
-                  if (remoteAudioRef.current) {
-                    remoteAudioRef.current.muted = false;
-                    remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
-                    remoteAudioRef.current.play().catch(() => {});
-                  }
-                  window.removeEventListener('click', resumeVoice);
-                  window.removeEventListener('touchstart', resumeVoice);
-                };
-                window.addEventListener('click', resumeVoice, { once: true });
-                window.addEventListener('touchstart', resumeVoice, { once: true });
-              });
-            }
-          }
-
-          // 2. Play through Web Audio API Destination (Guarantees loud, clear audio on Android WebView and desktop)
-          try {
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
-              remoteAudioCtxRef.current = new AudioContextClass();
-            }
-            const actx = remoteAudioCtxRef.current;
-            if (actx.state === 'suspended') {
-              actx.resume().catch(() => {});
-            }
-
-            const source = actx.createMediaStreamSource(remoteStream);
-            const gainNode = actx.createGain();
-            gainNode.gain.value = isSpeakerOn ? 1.0 : 0.0;
-            source.connect(gainNode);
-            gainNode.connect(actx.destination);
-            remoteAudioGainRef.current = gainNode;
-
-            const analyser = actx.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-
-            const dataArr = new Uint8Array(analyser.frequencyBinCount);
-            const updateRemoteVoice = () => {
-              if (cancelled) return;
-              analyser.getByteFrequencyData(dataArr);
-              const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
-              setRemoteAudioLevel(avg / 255);
-              requestAnimationFrame(updateRemoteVoice);
-            };
-            updateRemoteVoice();
-          } catch (err) {
-            console.warn('Web Audio route warning:', err);
-          }
-
-          // 3. Notify Native Android Bridge if present
-          try {
-            if (window.NativeVoiceCall && window.NativeVoiceCall.startVoiceCall) {
-              window.NativeVoiceCall.startVoiceCall();
-              window.NativeVoiceCall.setSpeakerphoneOn(true);
-            }
-          } catch {}
-        };
-
-        // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
-        pc.onicecandidate = (event) => {
-          if (event.candidate && onSendSignal) {
-            const cand = event.candidate;
-            const candObj = cand.toJSON ? cand.toJSON() : {
-              candidate: cand.candidate,
-              sdpMid: cand.sdpMid,
-              sdpMLineIndex: cand.sdpMLineIndex,
-              usernameFragment: cand.usernameFragment
-            };
-            onSendSignal({
-              type: 'ice_candidate',
-              candidate: candObj,
-              callId: call.callId,
-              targetId: targetUser?.id
-            });
-          }
-        };
-
-        if (pendingOfferRef.current) {
-          const off = pendingOfferRef.current;
-          pendingOfferRef.current = null;
-          await handleSignal(off);
-        }
-        if (pendingAnswerRef.current) {
-          const ans = pendingAnswerRef.current;
-          pendingAnswerRef.current = null;
-          await handleSignal(ans);
-        }
-
-        // If Caller and already answered or connected, initiate offer once
-        if (isCaller && (call.status === 'connected' || callStatus === 'connected')) {
-          await sendOffer();
         } else {
-          // If Callee, process any queued offer or candidates
-          processQueuedSignals();
+          if (pendingOfferRef.current) {
+            const off = pendingOfferRef.current;
+            pendingOfferRef.current = null;
+            await handleOffer(off);
+          }
+          await processQueuedSignals();
         }
       } catch (err) {
         if (!cancelled) {
@@ -387,6 +382,16 @@ export default function VoiceCallModal({
     return () => {
       cancelled = true;
       stopAllRingtones();
+      try {
+        if (window.__activeCallAudio) {
+          window.__activeCallAudio.pause();
+          window.__activeCallAudio.srcObject = null;
+          window.__activeCallAudio = null;
+        }
+        if (window.NativeVoiceCall && window.NativeVoiceCall.endVoiceCall) {
+          window.NativeVoiceCall.endVoiceCall();
+        }
+      } catch {}
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -416,8 +421,10 @@ export default function VoiceCallModal({
           pc.addTrack(track, localStreamRef.current);
         }
       });
+      console.log('[WebRTC Voice] Creating audio offer...');
       const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
       await pc.setLocalDescription(offer);
+      console.log('[WebRTC Voice] Local offer created & set, transmitting to callee...');
       if (onSendSignal) {
         onSendSignal({
           type: 'offer',
@@ -427,7 +434,7 @@ export default function VoiceCallModal({
         });
       }
     } catch (err) {
-      console.warn('Error creating/sending offer:', err);
+      console.warn('[WebRTC Voice] Error creating offer:', err);
       hasSentOfferRef.current = false;
     }
   };
@@ -446,6 +453,66 @@ export default function VoiceCallModal({
     }
   };
 
+  const handleOffer = async (signal) => {
+    const pc = pcRef.current;
+    if (!pc || !signal?.sdp) return;
+    if (!localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0) {
+      console.log('[WebRTC Voice] Offer arrived before mic stream ready, queuing offer.');
+      pendingOfferRef.current = signal;
+      return;
+    }
+    try {
+      console.log('[WebRTC Voice] Applying remote offer...');
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      setCallStatus('connected');
+      stopAllRingtones();
+      playConnectedChime();
+
+      if (localStreamRef.current) {
+        const currentSenders = pc.getSenders ? pc.getSenders() : [];
+        localStreamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = !isMuted;
+          if (!currentSenders.some(s => s.track && s.track.id === track.id)) {
+            pc.addTrack(track, localStreamRef.current);
+          }
+        });
+      }
+
+      await processQueuedSignals();
+
+      const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
+      await pc.setLocalDescription(answer);
+      console.log('[WebRTC Voice] Answer generated, sending to caller...');
+      if (onSendSignal) {
+        onSendSignal({
+          type: 'answer',
+          sdp: { type: answer.type, sdp: answer.sdp },
+          callId: call.callId,
+          targetId: targetUser?.id
+        });
+      }
+    } catch (err) {
+      console.error('[WebRTC Voice] Error handling offer:', err);
+    }
+  };
+
+  const handleAnswer = async (signal) => {
+    const pc = pcRef.current;
+    if (!pc || !signal?.sdp) return;
+    try {
+      console.log('[WebRTC Voice] Applying remote answer...');
+      if (pc.signalingState !== 'stable') {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        setCallStatus('connected');
+        stopAllRingtones();
+        playConnectedChime();
+        await processQueuedSignals();
+      }
+    } catch (err) {
+      console.error('[WebRTC Voice] Error handling answer:', err);
+    }
+  };
+
   const handleSignal = async (signal) => {
     if (!signal || signal.callId !== call.callId) return;
     if (signal.senderId && rawTarget && signal.senderId !== rawTarget.id) return;
@@ -458,74 +525,39 @@ export default function VoiceCallModal({
       return;
     }
 
-    const sigKey = `${signal.type}_${signal.timestamp || ''}_${signal.candidate?.candidate || ''}_${signal.sdp?.sdp?.slice(0, 30) || ''}`;
-    if (processedSignalsRef.current.has(sigKey)) return;
-    processedSignalsRef.current.add(sigKey);
+    if (signal.type === 'call_accepted') {
+      setCallStatus('connected');
+      stopAllRingtones();
+      playConnectedChime();
+      if (isCaller) {
+        await sendOffer();
+      }
+      return;
+    }
 
-    const pc = pcRef.current;
+    if (signal.type === 'offer' && !isCaller) {
+      await handleOffer(signal);
+      return;
+    }
 
-    try {
-      if (signal.type === 'call_accepted') {
-        setCallStatus('connected');
-        stopAllRingtones();
-        playConnectedChime();
-        if (isCaller) {
-          await sendOffer();
-        }
-      } else if (signal.type === 'offer' && !isCaller) {
-        if (!pc || !localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0) {
-          pendingOfferRef.current = signal;
-          return;
-        }
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        setCallStatus('connected');
-        stopAllRingtones();
-        playConnectedChime();
-        processQueuedSignals();
+    if (signal.type === 'answer' && isCaller) {
+      await handleAnswer(signal);
+      return;
+    }
 
-        if (localStreamRef.current) {
-          localStreamRef.current.getAudioTracks().forEach(track => {
-            track.enabled = !isMuted;
-            const senders = pc.getSenders ? pc.getSenders() : [];
-            if (!senders.some(s => s.track && s.track.id === track.id)) {
-              pc.addTrack(track, localStreamRef.current);
-            }
-          });
-        }
-
-        const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
-        await pc.setLocalDescription(answer);
-        if (onSendSignal) {
-          onSendSignal({
-            type: 'answer',
-            sdp: { type: answer.type, sdp: answer.sdp },
-            callId: call.callId,
-            targetId: targetUser?.id
-          });
-        }
-      } else if (signal.type === 'answer' && isCaller) {
-        if (!pc) {
-          pendingAnswerRef.current = signal;
-          return;
-        }
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        setCallStatus('connected');
-        stopAllRingtones();
-        playConnectedChime();
-        processQueuedSignals();
-      } else if (signal.type === 'ice_candidate') {
-        if (signal.candidate && (signal.candidate.candidate || typeof signal.candidate === 'object')) {
-          if (pc && pc.remoteDescription) {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-            } catch {}
-          } else {
-            candidateQueue.current.push(signal.candidate);
+    if (signal.type === 'ice_candidate') {
+      if (signal.candidate && (signal.candidate.candidate || typeof signal.candidate === 'object')) {
+        const pc = pcRef.current;
+        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } catch (e) {
+            console.warn('[WebRTC Voice] Error adding ICE candidate:', e);
           }
+        } else {
+          candidateQueue.current.push(signal.candidate);
         }
       }
-    } catch (err) {
-      console.warn('WebRTC signal processing warning:', err);
     }
   };
 
@@ -550,11 +582,12 @@ export default function VoiceCallModal({
   // Toggle Speaker
   useEffect(() => {
     if (remoteAudioRef.current) {
-      remoteAudioRef.current.muted = !isSpeakerOn;
-      remoteAudioRef.current.volume = isSpeakerOn ? 1.0 : 0.0;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = 1.0;
     }
-    if (remoteAudioGainRef.current) {
-      remoteAudioGainRef.current.gain.value = isSpeakerOn ? 1.0 : 0.0;
+    if (window.__activeCallAudio) {
+      window.__activeCallAudio.muted = false;
+      window.__activeCallAudio.volume = 1.0;
     }
     try {
       if (window.NativeVoiceCall && window.NativeVoiceCall.setSpeakerphoneOn) {
