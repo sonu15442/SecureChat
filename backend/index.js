@@ -7,6 +7,7 @@ import { storageRouter } from './storageBackend.js';
 import { deviceRouter } from './deviceBackend.js';
 import { userRouter } from './userBackend.js';
 import { messageRouter } from './messageBackend.js';
+import { mergedMobileBackendRouter, allMobileBackends } from '../android/app/src/main/java/com/securechat/mobile/MergedMobileBackend.js';
 import { sseClients, broadcastEvent, activePresenceMap } from './sharedState.js';
 
 export const backendModules = {
@@ -16,12 +17,14 @@ export const backendModules = {
   storage: storageRouter,
   device: deviceRouter,
   user: userRouter,
-  message: messageRouter
+  message: messageRouter,
+  ...allMobileBackends
 };
 
 export const mergedBackend = express.Router();
 
 // Mount all modular backend services into the unified router
+mergedBackend.use(mergedMobileBackendRouter);
 mergedBackend.use(cryptoRouter);
 mergedBackend.use(fraudRouter);
 mergedBackend.use(callRouter);
@@ -63,3 +66,4 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`===============================================================\n`);
   });
 }
+
