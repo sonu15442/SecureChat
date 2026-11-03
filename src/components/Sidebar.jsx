@@ -204,6 +204,7 @@ export default function Sidebar({
   const checkIsOnline = (user) => {
     if (!user || !user.id) return false;
     if (currentUser?.id && user.id === currentUser.id) return true;
+    if (user.isOnline === true) return true;
     if (Array.isArray(onlineUsers)) {
       return onlineUsers.some(o => (typeof o === 'string' ? o === user.id : o?.id === user.id));
     }
@@ -422,7 +423,7 @@ export default function Sidebar({
       }`}>
 
         {/* ── MOBILE TOP BAR (Image 1: SecureChat logo + Camera + Shield + Search + 3-dots) ── */}
-        <div className={`md:hidden flex items-center justify-between px-4 pt-1.5 pb-2 border-b ${
+        <div className={`md:hidden flex items-center justify-between px-4 pt-1 pb-1.5 border-b ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
         }`}>
           <div className="flex items-center gap-2">

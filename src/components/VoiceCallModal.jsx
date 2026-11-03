@@ -296,20 +296,22 @@ export default function VoiceCallModal({
                   window.addEventListener('touchstart', resumeVoice, { once: true });
                 });
               }
+            } else {
+              // In-memory fallback Audio element if ref not mounted
+              try {
+                if (!window.__activeCallAudio) {
+                  window.__activeCallAudio = new Audio();
+                }
+                window.__activeCallAudio.srcObject = remoteStream;
+                window.__activeCallAudio.muted = false;
+                window.__activeCallAudio.volume = 1.0;
+                window.__activeCallAudio.play().catch(() => {});
+              } catch {}
             }
-            // In-memory backup Audio element for Android WebView
-            try {
-              if (!window.__activeCallAudio) {
-                window.__activeCallAudio = new Audio();
-              }
-              window.__activeCallAudio.srcObject = remoteStream;
-              window.__activeCallAudio.volume = 1.0;
-              window.__activeCallAudio.play().catch(() => {});
-            } catch {}
           };
           playAudio();
 
-          // 2. Audio analyser for visualizer & direct Web Audio destination playback
+          // 2. Audio analyser for visualizer waves (isolated from actx.destination to prevent echo canceller cancellation)
           try {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!remoteAudioCtxRef.current || remoteAudioCtxRef.current.state === 'closed') {
@@ -320,12 +322,6 @@ export default function VoiceCallModal({
               actx.resume().catch(() => {});
             }
             const source = actx.createMediaStreamSource(remoteStream);
-            const gain = actx.createGain();
-            gain.gain.setValueAtTime(1.0, actx.currentTime);
-            source.connect(gain);
-            gain.connect(actx.destination);
-            remoteAudioGainRef.current = gain;
-
             const analyser = actx.createAnalyser();
             analyser.fftSize = 256;
             source.connect(analyser);

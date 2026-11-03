@@ -703,9 +703,12 @@ export default function ChatPanel({
     return Math.max(1, count);
   }, [onlineUsers, allUsers, currentUser]);
 
-  // Real-time online presence check strictly based on live onlineUsers list
+  // Real-time online presence check strictly based on live onlineUsers list and user profile
   const targetIsOnline = Boolean(
-    targetUser && Array.isArray(onlineUsers) && onlineUsers.some(u => (typeof u === 'string' ? u === targetUser.id : u?.id === targetUser.id))
+    targetUser && (
+      targetUser.isOnline === true ||
+      (Array.isArray(onlineUsers) && onlineUsers.some(u => (typeof u === 'string' ? u === targetUser.id : u?.id === targetUser.id)))
+    )
   );
 
   return (
@@ -716,7 +719,7 @@ export default function ChatPanel({
       {/* ══════════════════════════════════════════════════════════════ */}
       {/* 1. CHAT HEADER                                               */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <div className={`px-2.5 md:px-4 pt-1.5 pb-2 md:py-3 flex items-center justify-between border-b z-20 shrink-0 relative ${
+      <div className={`px-2.5 md:px-4 pt-1 pb-1.5 md:py-3 flex items-center justify-between border-b z-20 shrink-0 relative ${
         isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
       }`}>
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">

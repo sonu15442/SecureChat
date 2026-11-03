@@ -366,8 +366,11 @@ function App() {
 
     // Listen for presence changes & auto-upgrade sent messages to delivered for online users
     const unsub3 = on('presence', (users) => {
-      setOnlineUsers(users);
-      const onlineIds = users.map(u => u.id);
+      if (Array.isArray(users) && users.length > 0) {
+        const localIds = users.map(u => (typeof u === 'string' ? u : u?.id)).filter(Boolean);
+        setOnlineUsers(prev => Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...localIds])));
+      }
+      const onlineIds = (users || []).map(u => (typeof u === 'string' ? u : u?.id)).filter(Boolean);
       setMessages(prev => {
         const upgradedIds = [];
         const next = prev.map(m => {
@@ -441,34 +444,40 @@ function App() {
 
   // Server-side cross-device presence heartbeat
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
 
     let isSubscribed = true;
     const ping = async () => {
       if (!isSubscribed) return;
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      const res = await sendPresenceHeartbeat(currentUser);
-      if (isSubscribed && res && Array.isArray(res.onlineUserIds)) {
-        setOnlineUsers(res.onlineUserIds);
-      }
+      try {
+        const res = await sendPresenceHeartbeat(currentUser);
+        if (isSubscribed && res && Array.isArray(res.onlineUserIds)) {
+          setOnlineUsers(res.onlineUserIds);
+        }
+      } catch {}
     };
 
     ping();
-    const heartbeatInterval = setInterval(ping, 3000);
+    const heartbeatInterval = setInterval(ping, 3500);
 
     const handleVisibility = () => {
-      if (typeof document !== 'undefined') {
-        if (document.visibilityState === 'hidden') {
-          if (currentUser?.id) sendPresenceLeave(currentUser.id);
-        } else if (document.visibilityState === 'visible') {
-          ping();
-          loadRegisteredUsers();
-        }
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        ping();
+        loadRegisteredUsers();
       }
     };
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    const handleBeforeUnload = () => {
+      if (currentUser?.id) {
+        sendPresenceLeave(currentUser.id);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', handleBeforeUnload);
     }
 
     return () => {
@@ -477,9 +486,11 @@ function App() {
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibility);
       }
-      if (currentUser?.id) sendPresenceLeave(currentUser.id);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      }
     };
-  }, [currentUser, loadRegisteredUsers]);
+  }, [currentUser?.id, loadRegisteredUsers]);
 
   // Periodic health & latency check for live sync badge
   useEffect(() => {
@@ -646,7 +657,7 @@ function App() {
     const onlineSet = new Set((onlineUsers || []).map(u => (typeof u === 'string' ? u : u?.id)));
     (registeredUsers || []).forEach(u => {
       if (u && u.id && u.id !== currentUser?.id && u.name && u.name.trim() !== '') {
-        userMap.set(u.id, { ...u, isOnline: onlineSet.has(u.id) });
+        userMap.set(u.id, { ...u, isOnline: onlineSet.has(u.id) || u.isOnline === true });
       }
     });
     // Update presence ONLY on registered users - NEVER inject unverified or nameless users!

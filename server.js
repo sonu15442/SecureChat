@@ -46,9 +46,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// In-memory active presence tracking across devices
+// In-memory active presence tracking across devices (25s timeout accommodates mobile sleep and network jitter)
 const activePresenceMap = new Map(); // userId -> { user, lastSeen }
-const PRESENCE_TIMEOUT_MS = 6000; // 6s timeout keeps presence strictly realtime
+const PRESENCE_TIMEOUT_MS = 25000; // 25s timeout ensures rock-solid online status across web and mobile
 
 // Active Call Signaling & State Hub for Web & Mobile
 const activeCallSignals = new Map(); // callId -> Array of { signal, timestamp }
@@ -93,8 +93,8 @@ function cleanStalePresence() {
   }
 }
 
-// Periodically purge stale presence every 2.5 seconds
-setInterval(cleanStalePresence, 2500);
+// Periodically purge stale presence every 5 seconds
+setInterval(cleanStalePresence, 5000);
 
 // Periodically clean up stale call signaling buffers older than 2 minutes
 setInterval(() => {
@@ -258,6 +258,20 @@ app.get('/api/realtime/stream', (req, res) => {
   res.write(': connected\n\n');
 
   sseClients.add(res);
+
+  // Instantly dispatch current presence and registered users state to new connection
+  cleanStalePresence();
+  const onlineUserIds = Array.from(activePresenceMap.keys());
+  res.write(`data: ${JSON.stringify({ type: 'presence', payload: { onlineUserIds }, timestamp: Date.now() })}\n\n`);
+
+  getAllUsers().then(rawUsers => {
+    const safeUsers = rawUsers.map(({ passwordHash: _, ...u }) => ({
+      ...u,
+      isOnline: activePresenceMap.has(u.id),
+      lastSeen: (u.lastSeen && u.lastSeen !== 'Online') ? u.lastSeen : (u.updatedAt || u.createdAt || new Date().toISOString())
+    }));
+    res.write(`data: ${JSON.stringify({ type: 'users_updated', payload: { users: safeUsers }, timestamp: Date.now() })}\n\n`);
+  }).catch(() => {});
 
   const keepAlive = setInterval(() => {
     try {

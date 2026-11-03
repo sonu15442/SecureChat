@@ -11,7 +11,7 @@ function getApiCandidates() {
   // 1. Last known working server (HIGHEST PRIORITY for zero-latency instant connects)
   try {
     const lastActive = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_last_active_server') : null;
-    if (lastActive && lastActive.trim()) {
+    if (lastActive && lastActive.trim() && !lastActive.includes(':5173')) {
       candidates.push(lastActive.trim());
     }
   } catch {}
@@ -19,42 +19,40 @@ function getApiCandidates() {
   // 2. Custom server IP configured in Settings (e.g. for phone on WiFi)
   try {
     const customServer = typeof localStorage !== 'undefined' ? localStorage.getItem('securechat_custom_server') : null;
-    if (customServer && customServer.trim()) {
+    if (customServer && customServer.trim() && !customServer.includes(':5173')) {
       const cleanCustom = customServer.trim().replace(/\/+$/, '');
       candidates.push(cleanCustom.endsWith('/api') ? cleanCustom : `${cleanCustom}/api`);
     }
   } catch {}
 
-  // 3. Known LAN Wi-Fi IP for direct cross-device mobile <-> web communication
+  // 3. USB reverse port forwarding & localhost endpoints (Highest speed on phone with ADB reverse)
+  candidates.push('http://localhost:3001/api');
+  candidates.push('http://127.0.0.1:3001/api');
   candidates.push('http://10.83.249.35:3001/api');
+  candidates.push('http://10.0.2.2:3001/api');
 
-  // 4. USB reverse port forwarding & local dev endpoints
+  // 4. Web browser environment
   if (typeof window !== 'undefined') {
     const origin = window.location.origin || '';
     const hostname = window.location.hostname || '';
     
-    candidates.push('http://localhost:3001/api');
-    candidates.push('http://127.0.0.1:3001/api');
-    candidates.push('http://10.0.2.2:3001/api');
-
-    // In web browser
-    if (!origin.includes('capacitor') && !origin.startsWith('file:')) {
+    // In web browser (not file:// android asset)
+    if (!origin.includes('capacitor') && !origin.startsWith('file:') && !origin.includes(':5173')) {
       candidates.push('/api');
     }
     
     if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
       candidates.push(`http://${hostname}:3001/api`);
-      candidates.push(`http://${hostname}:5173/api`);
     }
   }
 
-  if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL) {
+  if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL && !BACKEND_URL.includes(':5173')) {
     const clean = BACKEND_URL.endsWith('/api') ? BACKEND_URL : `${BACKEND_URL}/api`;
     candidates.push(clean);
   }
 
-  // Remove duplicate URLs while preserving strict priority
-  return Array.from(new Set(candidates));
+  // Remove duplicate URLs and any rogue frontend dev ports (:5173)
+  return Array.from(new Set(candidates.filter(c => !c.includes(':5173'))));
 }
 
 /**
@@ -99,7 +97,7 @@ async function fetchWithFallback(endpoint, options = {}) {
 }
 
 /**
- * Safely parse JSON from fetch response, avoiding "Unexpected end of JSON input"
+ * Safely parse JSON from fetch response, avoiding "Unexpected end of JSON input" and rejecting HTML responses
  */
 async function safeParseResponse(res) {
   const text = await res.text();
@@ -107,11 +105,15 @@ async function safeParseResponse(res) {
     if (res.ok) return {};
     throw new Error(res.statusText || 'BACKEND_OFFLINE');
   }
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<')) {
+    // Received HTML (e.g. Vite SPA fallback or 404 HTML page) - NOT a valid backend API endpoint!
+    throw new Error('BACKEND_RETURNED_HTML');
+  }
   try {
     return JSON.parse(text);
   } catch {
-    if (res.ok) return {};
-    throw new Error('BACKEND_OFFLINE');
+    throw new Error('INVALID_JSON_RESPONSE');
   }
 }
 
