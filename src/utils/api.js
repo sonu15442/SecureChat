@@ -432,7 +432,7 @@ export async function loginUser(email, password) {
         fetchWithFallback('/sync/user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user })
+          body: JSON.stringify({ userId: user.id, user })
         }).catch(() => {});
       } catch {}
 
@@ -669,7 +669,7 @@ export async function syncUserWithBackend(user) {
     const { data } = await fetchWithFallback('/users/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user })
+      body: JSON.stringify({ userId: user.id, user })
     });
     if (data?.users) {
       saveOfflineUsersDB(data.users);
@@ -688,7 +688,7 @@ export async function sendPresenceHeartbeat(user) {
     const { data } = await fetchWithFallback('/presence/heartbeat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user })
+      body: JSON.stringify({ userId: user.id, user })
     });
     return data || {};
   } catch {

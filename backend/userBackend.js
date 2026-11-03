@@ -450,20 +450,21 @@ userRouter.post('/api/users/clear-all', async (req, res) => {
  */
 userRouter.post('/api/presence/heartbeat', async (req, res) => {
   try {
-    const { userId, user } = req.body;
+    const user = req.body.user || req.body;
+    const userId = req.body.userId || user?.id;
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
     const wasOnline = activePresenceMap.has(userId);
     activePresenceMap.set(userId, { user, lastSeen: Date.now() });
 
+    const onlineUserIds = Array.from(activePresenceMap.keys());
     if (!wasOnline) {
-      const onlineUserIds = Array.from(activePresenceMap.keys());
       broadcastEvent('presence', { onlineUserIds });
     }
 
     res.json({
       status: 'acknowledged',
-      onlineUserIds: Array.from(activePresenceMap.keys()),
+      onlineUserIds,
       timestamp: Date.now()
     });
   } catch (err) {
@@ -476,7 +477,8 @@ userRouter.post('/api/presence/heartbeat', async (req, res) => {
  */
 userRouter.post('/api/presence/leave', async (req, res) => {
   try {
-    const { userId } = req.body;
+    const user = req.body.user || req.body;
+    const userId = req.body.userId || user?.id;
     if (userId && activePresenceMap.has(userId)) {
       activePresenceMap.delete(userId);
       const lastSeenIso = new Date().toISOString();

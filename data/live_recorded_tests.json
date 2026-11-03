@@ -1,23 +1,5 @@
 [
   {
-    "id": "test_1793021848914_bbpl",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:28.914Z"
-  },
-  {
-    "id": "test_1793021859840_swyh",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.08,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:39.841Z"
-  },
-  {
     "id": "test_1793021862693_oa1b",
     "category": "Navigation",
     "name": "Selenium Website: User opens conversation with Sonu Mobile",
@@ -1798,5 +1780,23 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-11-03T17:11:01.201Z"
+  },
+  {
+    "id": "test_1793729125240_7rk4",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T18:05:25.240Z"
+  },
+  {
+    "id": "test_1793729129766_k02z",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T18:05:29.766Z"
   }
 ]

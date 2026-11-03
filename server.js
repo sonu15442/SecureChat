@@ -50,27 +50,19 @@ app.use((req, res, next) => {
 // Mount separate modular backends merged into unified API
 app.use(mergedBackend);
 
-// In-memory active presence tracking across devices (25s timeout accommodates mobile sleep and network jitter)
-const activePresenceMap = new Map(); // userId -> { user, lastSeen }
-const PRESENCE_TIMEOUT_MS = 25000; // 25s timeout ensures rock-solid online status across web and mobile
+import {
+  activePresenceMap,
+  PRESENCE_TIMEOUT_MS,
+  activeCallSignals,
+  activeCalls,
+  sseClients,
+  broadcastEvent,
+  fraudThreatReports,
+  clientPublicKeys,
+  mobileDeviceVaults
+} from './backend/sharedState.js';
 
-// Active Call Signaling & State Hub for Web & Mobile
-const activeCallSignals = new Map(); // callId -> Array of { signal, timestamp }
-const activeCalls = new Map(); // callId -> { callId, status, callerId, recipientId, lastUpdated }
-
-// Server-Sent Events (SSE) clients for instant cross-device realtime synchronization
-const sseClients = new Set();
-
-export function broadcastEvent(type, payload) {
-  const data = JSON.stringify({ type, payload, timestamp: Date.now() });
-  for (const client of sseClients) {
-    try {
-      client.write(`data: ${data}\n\n`);
-    } catch {
-      sseClients.delete(client);
-    }
-  }
-}
+export { broadcastEvent };
 
 function cleanStalePresence() {
   const now = Date.now();
@@ -1528,11 +1520,6 @@ app.post('/api/tests/regenerate', (req, res) => {
 });
 
 // ── Native Mobile Module Bridge Endpoints ──
-
-// In-memory vaults and threat intelligence logs
-const mobileDeviceVaults = new Map();
-const fraudThreatReports = [];
-const clientPublicKeys = new Map();
 
 /**
  * POST /api/device/status
