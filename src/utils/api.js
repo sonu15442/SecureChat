@@ -37,7 +37,7 @@ function getApiCandidates() {
     const hostname = window.location.hostname || '';
     
     // In web browser (not file:// android asset)
-    if (!origin.includes('capacitor') && !origin.startsWith('file:') && !origin.includes(':5173')) {
+    if (!origin.startsWith('file:') && !origin.includes(':5173')) {
       candidates.push('/api');
     }
     
