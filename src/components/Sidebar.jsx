@@ -423,9 +423,12 @@ export default function Sidebar({
       }`}>
 
         {/* ── MOBILE TOP BAR (Image 1: SecureChat logo + Camera + Shield + Search + 3-dots) ── */}
-        <div className={`md:hidden flex items-center justify-between px-4 pt-1 pb-1.5 border-b ${
-          isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
-        }`}>
+        <div
+          className={`md:hidden flex items-center justify-between px-4 pt-3 pb-2.5 border-b ${
+            isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
+          }`}
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+        >
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-[#f97316]/20 border border-[#f97316]/40 flex items-center justify-center text-[#f97316]">
               <Shield className="w-4 h-4" />

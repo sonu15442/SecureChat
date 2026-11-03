@@ -719,9 +719,12 @@ export default function ChatPanel({
       {/* ══════════════════════════════════════════════════════════════ */}
       {/* 1. CHAT HEADER                                               */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <div className={`px-2.5 md:px-4 pt-1 pb-1.5 md:py-3 flex items-center justify-between border-b z-20 shrink-0 relative ${
-        isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
-      }`}>
+      <div
+        className={`px-2.5 md:px-4 pt-3 pb-2.5 md:py-3 flex items-center justify-between border-b z-20 shrink-0 relative ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#0d161d] border-slate-800/80'
+        }`}
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+      >
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
           {/* Back button (Mobile view to return to chats) */}
           <button
