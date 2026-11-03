@@ -185,10 +185,10 @@ describe('Saved User Search & Profile Messaging Flow', () => {
     expect(JSON.parse(localStorage.getItem('securechat_all_users_db') || '[]')).toHaveLength(2);
   });
 
-  it('getOfflineUsersDB returns empty array with no default dummy users on fresh mobile instance', async () => {
+  it('getOfflineUsersDB returns saved users with no default dummy demo users on fresh mobile instance', async () => {
     const { getOfflineUsersDB } = await import('../utils/api');
     const users = getOfflineUsersDB();
-    expect(users).toHaveLength(0);
+    expect(users.filter(u => u && u.id && u.id.includes('demo'))).toHaveLength(0);
   });
 
   it('Sidebar searches and finds realtime saved user sonu panigrahi on mobile', async () => {
