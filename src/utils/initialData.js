@@ -15,6 +15,7 @@ export const DEFAULT_SAVED_USERS = [
     username: "@sonupanigrahi029",
     email: "sonupanigrahi029@gmail.com",
     phone: "",
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
     bio: "My Rules🥶🥵",
     status: "offline",
     isOnline: false
@@ -25,6 +26,7 @@ export const DEFAULT_SAVED_USERS = [
     username: "@mcsonu143",
     email: "mcsonu143@gmail.com",
     phone: "",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80",
     bio: "Hey there! I am using SecureChat.",
     status: "offline",
     isOnline: false

@@ -261,24 +261,11 @@ function App() {
     }
   }, []);
 
-  // ── Auto-Purge Previously Saved Profiles on Startup ──
+  // ── Initialize Profiles & Hydrate Database on Startup ──
   useEffect(() => {
-    const PURGE_KEY = 'securechat_fresh_clean_slate_2026';
-    if (!localStorage.getItem(PURGE_KEY)) {
-      localStorage.removeItem('securechat_user');
-      localStorage.setItem('securechat_all_users_db', JSON.stringify([]));
-      // preserved messages
-      localStorage.setItem(PURGE_KEY, 'true');
-
-      // Purge backend database
-      fetch('/api/auth/clean-slate', { method: 'POST' }).catch(() => {});
-      fetch('/api/users/clear-all', { method: 'POST' }).catch(() => {});
-
-      setCurrentUser(null);
-      setRegisteredUsers([]);
-      setMessages([]);
-    }
-  }, []);
+    // Ensure default demo and seed profiles are preserved and synchronized
+    loadRegisteredUsers();
+  }, [loadRegisteredUsers]);
 
   // Ensure active logged-in user session is recorded in test reports
   useEffect(() => {

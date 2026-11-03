@@ -25,26 +25,20 @@ function getApiCandidates() {
     }
   } catch {}
 
-  // 3. USB reverse port forwarding & localhost endpoints (Highest speed on phone with ADB reverse)
+  // 3. Web & Mobile browser network environment (Instant direct access)
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname || '';
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      candidates.push(`http://${hostname}:3001/api`);
+    }
+    candidates.push('/api');
+  }
+
+  // 4. USB reverse port forwarding & localhost endpoints
   candidates.push('http://localhost:3001/api');
   candidates.push('http://127.0.0.1:3001/api');
   candidates.push('http://10.83.249.35:3001/api');
   candidates.push('http://10.0.2.2:3001/api');
-
-  // 4. Web browser environment
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin || '';
-    const hostname = window.location.hostname || '';
-    
-    // In web browser (not file:// android asset)
-    if (!origin.startsWith('file:') && !origin.includes(':5173')) {
-      candidates.push('/api');
-    }
-    
-    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      candidates.push(`http://${hostname}:3001/api`);
-    }
-  }
 
   if (typeof BACKEND_URL !== 'undefined' && BACKEND_URL && !BACKEND_URL.includes(':5173')) {
     const clean = BACKEND_URL.endsWith('/api') ? BACKEND_URL : `${BACKEND_URL}/api`;
@@ -149,6 +143,10 @@ export function getOfflineUsersDB() {
           ? u.lastSeen
           : (u.updatedAt || u.createdAt || new Date().toISOString())
       }));
+    if (filtered.length === 0) {
+      localStorage.setItem('securechat_all_users_db', JSON.stringify(DEFAULT_SAVED_USERS));
+      return DEFAULT_SAVED_USERS;
+    }
     localStorage.setItem('securechat_all_users_db', JSON.stringify(filtered));
     return filtered;
   } catch {
