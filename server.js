@@ -24,6 +24,7 @@ import {
   updateMessageStatusInDb,
   updateUserLastSeen
 } from './db.js';
+import { mergedBackend } from './backend/index.js';
 
 dotenv.config();
 
@@ -45,6 +46,9 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// Mount separate modular backends merged into unified API
+app.use(mergedBackend);
 
 // In-memory active presence tracking across devices (25s timeout accommodates mobile sleep and network jitter)
 const activePresenceMap = new Map(); // userId -> { user, lastSeen }
