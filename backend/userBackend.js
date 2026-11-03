@@ -500,3 +500,4 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`👤 User & Authentication Dedicated Backend running on port ${PORT}`);
   });
 }
+

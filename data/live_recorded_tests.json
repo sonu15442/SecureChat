@@ -1,473 +1,5 @@
 [
   {
-    "id": "test_1792952056641_2tnb",
-    "category": "Authentication",
-    "name": "Selenium Website: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:14:16.641Z"
-  },
-  {
-    "id": "test_1792952094492_x50v",
-    "category": "Authentication",
-    "name": "Appium Android: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChatMobile",
-    "timestamp": "2026-10-25T18:14:54.492Z"
-  },
-  {
-    "id": "test_1792952446546_7njv",
-    "category": "Authentication",
-    "name": "Selenium Website: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:20:46.546Z"
-  },
-  {
-    "id": "test_1792953215165_uc7i",
-    "category": "Authentication",
-    "name": "Selenium Website: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:33:35.165Z"
-  },
-  {
-    "id": "test_1792953248970_jp4j",
-    "category": "Authentication",
-    "name": "Selenium Website: Password successfully reset via Gmail OTP",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:34:08.970Z"
-  },
-  {
-    "id": "test_1792953262423_q4zw",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:34:22.423Z"
-  },
-  {
-    "id": "test_1792953403032_x4p6",
-    "category": "Authentication",
-    "name": "Selenium Website: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:36:43.032Z"
-  },
-  {
-    "id": "test_1792954031363_4lyo",
-    "category": "Authentication",
-    "name": "Selenium Website: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:47:11.363Z"
-  },
-  {
-    "id": "test_1792954031385_ezk1",
-    "category": "Authentication",
-    "name": "Selenium Website: User requests OTP sent to Gmail for password reset",
-    "duration": 0.1,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:47:11.385Z"
-  },
-  {
-    "id": "test_1792954073983_v8sf",
-    "category": "Authentication",
-    "name": "Selenium Website: Password successfully reset via Gmail OTP",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:47:53.983Z"
-  },
-  {
-    "id": "test_1792954074005_c7t7",
-    "category": "Authentication",
-    "name": "Selenium Website: User verifies OTP and resets password successfully",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:47:54.005Z"
-  },
-  {
-    "id": "test_1792954077980_fqni",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:47:57.980Z"
-  },
-  {
-    "id": "test_1792954078014_qfj5",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:47:58.014Z"
-  },
-  {
-    "id": "test_1792954080883_33x0",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Moments rail tab",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:00.883Z"
-  },
-  {
-    "id": "test_1792954086189_99mp",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:06.189Z"
-  },
-  {
-    "id": "test_1792954088831_ee5p",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:08.831Z"
-  },
-  {
-    "id": "test_1792954091336_pnuz",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:11.336Z"
-  },
-  {
-    "id": "test_1792954094834_k1fs",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:14.834Z"
-  },
-  {
-    "id": "test_1792954098884_ozwn",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.14,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:18.884Z"
-  },
-  {
-    "id": "test_1792954100806_dzhu",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Mobile",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:20.806Z"
-  },
-  {
-    "id": "test_1792954104857_3pdk",
-    "category": "Session Management",
-    "name": "Selenium Website: User initiates encrypted voice call",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:24.857Z"
-  },
-  {
-    "id": "test_1792954135062_wpao",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:55.062Z"
-  },
-  {
-    "id": "test_1792954135077_6qnq",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:55.077Z"
-  },
-  {
-    "id": "test_1792954138672_scwu",
-    "category": "Session Management",
-    "name": "Selenium Website: User initiates encrypted voice call",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:48:58.672Z"
-  },
-  {
-    "id": "test_1792954146197_ig3n",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:49:06.197Z"
-  },
-  {
-    "id": "test_1792954146211_8azn",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:49:06.211Z"
-  },
-  {
-    "id": "test_1792954157544_x45z",
-    "category": "Session Management",
-    "name": "Selenium Website: User accepts incoming call",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:49:17.544Z"
-  },
-  {
-    "id": "test_1792954181173_2mdi",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:49:41.173Z"
-  },
-  {
-    "id": "test_1792954181186_1u2x",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-25T18:49:41.186Z"
-  },
-  {
-    "id": "test_1792999818718_d1rs",
-    "category": "Profile Management",
-    "name": "Selenium Website: User toggles dark mode theme appearance",
-    "duration": 0.14,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:30:18.718Z"
-  },
-  {
-    "id": "test_1792999836033_pakm",
-    "category": "Authentication",
-    "name": "Selenium Website: OTP generated and sent to Gmail",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:30:36.033Z"
-  },
-  {
-    "id": "test_1792999836047_be1t",
-    "category": "Authentication",
-    "name": "Selenium Website: User requests OTP sent to Gmail for password reset",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:30:36.047Z"
-  },
-  {
-    "id": "test_1792999864501_38tj",
-    "category": "Authentication",
-    "name": "Selenium Website: Password successfully reset via Gmail OTP",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:04.501Z"
-  },
-  {
-    "id": "test_1792999864516_n1yu",
-    "category": "Authentication",
-    "name": "Selenium Website: User verifies OTP and resets password successfully",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:04.516Z"
-  },
-  {
-    "id": "test_1792999872671_cmqt",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:12.671Z"
-  },
-  {
-    "id": "test_1792999872687_o5m7",
-    "category": "Authentication",
-    "name": "Selenium Website: Login successful",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:12.687Z"
-  },
-  {
-    "id": "test_1792999879178_02fk",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Mobile",
-    "duration": 0.1,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:19.178Z"
-  },
-  {
-    "id": "test_1792999881630_vs4p",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Moments rail tab",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:21.630Z"
-  },
-  {
-    "id": "test_1792999889600_8sci",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:29.600Z"
-  },
-  {
-    "id": "test_1792999896583_eb88",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T07:31:36.583Z"
-  },
-  {
-    "id": "test_1793021753289_qxdw",
-    "category": "Session Management",
-    "name": "Selenium Website: User initiates encrypted voice call",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:35:53.289Z"
-  },
-  {
-    "id": "test_1793021777214_6cmi",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:17.214Z"
-  },
-  {
-    "id": "test_1793021777220_bwcv",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:17.220Z"
-  },
-  {
-    "id": "test_1793021783744_p2ke",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Calls rail tab",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:23.744Z"
-  },
-  {
-    "id": "test_1793021788192_ed3h",
-    "category": "Session Management",
-    "name": "Selenium Website: User initiates encrypted voice call",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:28.192Z"
-  },
-  {
-    "id": "test_1793021796800_pydq",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:36.800Z"
-  },
-  {
-    "id": "test_1793021796808_nfzw",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:36.808Z"
-  },
-  {
-    "id": "test_1793021801941_w6ak",
-    "category": "Session Management",
-    "name": "Selenium Website: User accepts incoming call",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:36:41.942Z"
-  },
-  {
-    "id": "test_1793021837832_ah8a",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:17.832Z"
-  },
-  {
-    "id": "test_1793021837886_kkzx",
-    "category": "Session Management",
-    "name": "Selenium Website: User hangs up call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:17.886Z"
-  },
-  {
-    "id": "test_1793021841866_f4gd",
-    "category": "Session Management",
-    "name": "Selenium Website: User accepts incoming call",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:21.866Z"
-  },
-  {
-    "id": "test_1793021848900_ft8a",
-    "category": "Session Management",
-    "name": "Selenium Website: User terminates voice call session",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:28.900Z"
-  },
-  {
     "id": "test_1793021848914_bbpl",
     "category": "Session Management",
     "name": "Selenium Website: User hangs up call session",
@@ -1798,5 +1330,473 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-11-03T07:19:56.980Z"
+  },
+  {
+    "id": "test_1793717533831_c4gf",
+    "category": "Authentication",
+    "name": "Selenium Website: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:52:13.831Z"
+  },
+  {
+    "id": "test_1793717574522_2hqh",
+    "category": "Authentication",
+    "name": "Selenium Website: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:52:54.522Z"
+  },
+  {
+    "id": "test_1793717580183_fwps",
+    "category": "Authentication",
+    "name": "Selenium Website: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:00.183Z"
+  },
+  {
+    "id": "test_1793717580207_1xkf",
+    "category": "Authentication",
+    "name": "Selenium Website: User requests OTP sent to Gmail for password reset",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:00.207Z"
+  },
+  {
+    "id": "test_1793717608855_dl0p",
+    "category": "Authentication",
+    "name": "Selenium Website: Password successfully reset via Gmail OTP",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:28.855Z"
+  },
+  {
+    "id": "test_1793717608882_xf54",
+    "category": "Authentication",
+    "name": "Selenium Website: User verifies OTP and resets password successfully",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:28.882Z"
+  },
+  {
+    "id": "test_1793717613615_qxli",
+    "category": "Authentication",
+    "name": "Selenium Website: Login successful",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:33.615Z"
+  },
+  {
+    "id": "test_1793717613665_cprt",
+    "category": "Authentication",
+    "name": "Selenium Website: Login successful",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:33.666Z"
+  },
+  {
+    "id": "test_1793717620051_db7w",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:40.051Z"
+  },
+  {
+    "id": "test_1793717623922_vopp",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Chats rail tab",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:43.923Z"
+  },
+  {
+    "id": "test_1793717625010_kck1",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Moments rail tab",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:45.010Z"
+  },
+  {
+    "id": "test_1793717626523_mgfm",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Calls rail tab",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:46.523Z"
+  },
+  {
+    "id": "test_1793717628637_c5ip",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Chats rail tab",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:48.637Z"
+  },
+  {
+    "id": "test_1793717630682_v4l2",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:53:50.682Z"
+  },
+  {
+    "id": "test_1793717676174_b3vk",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Vault rail tab",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:54:36.174Z"
+  },
+  {
+    "id": "test_1793717679401_b3zz",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Moments rail tab",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:54:39.401Z"
+  },
+  {
+    "id": "test_1793717688335_ze3t",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Chats rail tab",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:54:48.335Z"
+  },
+  {
+    "id": "test_1793717696767_pxdm",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Global Chat",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:54:56.767Z"
+  },
+  {
+    "id": "test_1793717697958_hst1",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:54:57.958Z"
+  },
+  {
+    "id": "test_1793717712041_27k0",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:55:12.041Z"
+  },
+  {
+    "id": "test_1793717748519_ifp6",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Moments rail tab",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:55:48.519Z"
+  },
+  {
+    "id": "test_1793717750100_n78v",
+    "category": "Moments Management",
+    "name": "Selenium Website: User views contact Moment story",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:55:50.100Z"
+  },
+  {
+    "id": "test_1793717756855_3so2",
+    "category": "Authentication",
+    "name": "Selenium Website: OTP generated and sent to Gmail",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T14:55:56.855Z"
+  },
+  {
+    "id": "test_1793722720513_uckp",
+    "category": "Authentication",
+    "name": "Selenium Website: Login successful",
+    "duration": 0.13,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T16:18:40.513Z"
+  },
+  {
+    "id": "test_1793722739307_q334",
+    "category": "Profile Management",
+    "name": "Selenium Website: User opens profile settings panel",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T16:18:59.307Z"
+  },
+  {
+    "id": "test_1793725363416_r149",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:02:43.416Z"
+  },
+  {
+    "id": "test_1793725366850_v8vd",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:02:46.850Z"
+  },
+  {
+    "id": "test_1793725369143_tuth",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Web",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:02:49.143Z"
+  },
+  {
+    "id": "test_1793725373643_5ee0",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:02:53.643Z"
+  },
+  {
+    "id": "test_1793725382733_4lt4",
+    "category": "Profile Management",
+    "name": "Selenium Website: User opens profile settings panel",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:02.733Z"
+  },
+  {
+    "id": "test_1793725395493_lz93",
+    "category": "Profile Management",
+    "name": "Selenium Website: User uploads custom profile picture from device",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:15.493Z"
+  },
+  {
+    "id": "test_1793725395531_glg1",
+    "category": "Profile Management",
+    "name": "Selenium Website: User updates profile avatar picture",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:15.531Z"
+  },
+  {
+    "id": "test_1793725397281_6ckd",
+    "category": "Profile Management",
+    "name": "Selenium Website: User updates profile details successfully",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:17.281Z"
+  },
+  {
+    "id": "test_1793725407102_orq7",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:27.102Z"
+  },
+  {
+    "id": "test_1793725415356_eukp",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Web",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:35.356Z"
+  },
+  {
+    "id": "test_1793725418456_87l5",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:38.456Z"
+  },
+  {
+    "id": "test_1793725427721_wi3t",
+    "category": "Session Management",
+    "name": "Selenium Website: User initiates encrypted voice call",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:47.721Z"
+  },
+  {
+    "id": "test_1793725430050_w5mc",
+    "category": "Session Management",
+    "name": "Selenium Website: User accepts incoming call",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:03:50.050Z"
+  },
+  {
+    "id": "test_1793725476532_ziq4",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates voice call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:36.532Z"
+  },
+  {
+    "id": "test_1793725476547_iv17",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:36.548Z"
+  },
+  {
+    "id": "test_1793725476898_tb6w",
+    "category": "Session Management",
+    "name": "Selenium Website: User terminates voice call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:36.898Z"
+  },
+  {
+    "id": "test_1793725476977_nwcg",
+    "category": "Session Management",
+    "name": "Selenium Website: User hangs up call session",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:36.977Z"
+  },
+  {
+    "id": "test_1793725492487_y830",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Web",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:52.487Z"
+  },
+  {
+    "id": "test_1793725497331_9gh8",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User attaches and sends media photo",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:57.331Z"
+  },
+  {
+    "id": "test_1793725497340_rq3t",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:04:57.340Z"
+  },
+  {
+    "id": "test_1793725515675_3eke",
+    "category": "Security Analysis",
+    "name": "Selenium Website: User analyzes URL: 10.83.249.35 (DANGEROUS)",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:05:15.675Z"
+  },
+  {
+    "id": "test_1793725517632_uqd7",
+    "category": "Security Analysis",
+    "name": "Selenium Website: User analyzes URL: 10.83.249.35 (DANGEROUS)",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:05:17.632Z"
+  },
+  {
+    "id": "test_1793725519981_9ht0",
+    "category": "Navigation",
+    "name": "Selenium Website: User switches to Chats rail tab",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:05:19.981Z"
+  },
+  {
+    "id": "test_1793725521230_qyv4",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:05:21.230Z"
+  },
+  {
+    "id": "test_1793725523933_bzgl",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:05:23.933Z"
+  },
+  {
+    "id": "test_1793725525643_xbzy",
+    "category": "Input Validation",
+    "name": "Selenium Website: Security scanner flags link and opens safety advisory",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:05:25.643Z"
+  },
+  {
+    "id": "test_1793725861201_1h2b",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Web",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T17:11:01.201Z"
   }
 ]

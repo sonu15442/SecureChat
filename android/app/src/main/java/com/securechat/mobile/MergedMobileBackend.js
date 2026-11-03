@@ -51,3 +51,4 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`   Connected 10 native Java modules directly to merged backend.`);
   });
 }
+
