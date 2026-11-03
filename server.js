@@ -1523,6 +1523,323 @@ app.post('/api/tests/regenerate', (req, res) => {
   res.json({ success: true, message: 'Test reports regenerated successfully with 300 tests.' });
 });
 
+// ── Native Mobile Module Bridge Endpoints ──
+
+// In-memory vaults and threat intelligence logs
+const mobileDeviceVaults = new Map();
+const fraudThreatReports = [];
+const clientPublicKeys = new Map();
+
+/**
+ * POST /api/device/status
+ * Telemetry endpoint for MainActivity and MainApplication native startup
+ */
+app.post('/api/device/status', (req, res) => {
+  try {
+    const { deviceModel, osVersion, appVersion, status, batteryLevel, networkType } = req.body || {};
+    const timestamp = Date.now();
+    console.log(`[Device Telemetry] ${deviceModel || 'Unknown Device'} (Android ${osVersion || 'N/A'}) - status: ${status || 'ONLINE'}`);
+    res.json({
+      success: true,
+      serverStatus: 'HEALTHY',
+      timestamp,
+      message: 'Native device status recorded.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to record device status: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/call/ice-servers
+ * Provides STUN/TURN server configuration for WebRTCManager.java
+ */
+app.get('/api/call/ice-servers', (req, res) => {
+  res.json({
+    success: true,
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
+    ],
+    timestamp: Date.now()
+  });
+});
+
+/**
+ * POST /api/call/ice-candidate
+ * Relays native ICE candidates from WebRTCManager.java
+ */
+app.post('/api/call/ice-candidate', (req, res) => {
+  try {
+    const { callId, candidate, senderId, targetId } = req.body || {};
+    if (!callId || !candidate) {
+      return res.status(400).json({ error: 'callId and candidate required.' });
+    }
+    const signalPayload = {
+      type: 'ice_candidate',
+      callId,
+      candidate,
+      senderId,
+      targetId,
+      timestamp: Date.now()
+    };
+    broadcastEvent('call_signal', signalPayload);
+    res.json({ success: true, message: 'ICE candidate relayed successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to relay ICE candidate.' });
+  }
+});
+
+/**
+ * POST /api/call/audio-telemetry
+ * Records native acoustic statistics from VoiceCallModule.java
+ */
+app.post('/api/call/audio-telemetry', (req, res) => {
+  try {
+    const { callId, sampleRate, bufferSize, isSpeakerphoneOn, isMuted } = req.body || {};
+    console.log(`[Voice Audio Telemetry] callId=${callId} speaker=${isSpeakerphoneOn} muted=${isMuted} rate=${sampleRate}Hz`);
+    res.json({ success: true, timestamp: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/call/metrics
+ * Records hardware video metrics from VideoCallModule.java
+ */
+app.post('/api/call/metrics', (req, res) => {
+  try {
+    const { callId, facingMode, isVideoActive, resolution, fps } = req.body || {};
+    console.log(`[Video Call Metrics] callId=${callId} camera=${facingMode} active=${isVideoActive} fps=${fps || 30}`);
+    res.json({ success: true, timestamp: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/fraud/report
+ * Accepts threat analysis reports from FraudDetectionModule.java
+ */
+app.post('/api/fraud/report', (req, res) => {
+  try {
+    const { url, score, verdict, reasons, reportedBy } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'URL required' });
+
+    const report = {
+      id: 'threat_' + Date.now(),
+      url,
+      score: score || 0,
+      verdict: verdict || 'UNKNOWN',
+      reasons: reasons || [],
+      reportedBy: reportedBy || 'NativeFraudDetectionModule',
+      timestamp: new Date().toISOString()
+    };
+
+    fraudThreatReports.push(report);
+    console.log(`[Fraud Alert Reported] URL: ${url} | Verdict: ${report.verdict} (Score: ${report.score})`);
+    res.json({ success: true, reportId: report.id, report });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/fraud/check
+ * Server-side link inspection for FraudDetectionModule.java
+ */
+app.post('/api/fraud/check', (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'URL required' });
+
+    const lower = url.toLowerCase();
+    let score = 0;
+    const reasons = [];
+
+    const suspiciousTlds = ['.zip', '.mov', '.top', '.xyz', '.work', '.click', '.link', '.kim', '.country', '.gq', '.cf', '.tk', '.ml'];
+    const phishingKeywords = ['verify', 'login', 'account', 'update', 'banking', 'secure', 'free', 'gift', 'crypto', 'bonus', 'winner', 'wallet', 'claim', 'urgent'];
+
+    if (/https?:\/\/\d+\.\d+\.\d+\.\d+/.test(lower)) {
+      score += 40;
+      reasons.push('Direct numeric IP address host');
+    }
+
+    for (const tld of suspiciousTlds) {
+      if (lower.includes(tld)) {
+        score += 25;
+        reasons.push(`Suspicious top-level domain: ${tld}`);
+        break;
+      }
+    }
+
+    let kwHits = 0;
+    for (const kw of phishingKeywords) {
+      if (lower.includes(kw)) kwHits++;
+    }
+    if (kwHits > 0) {
+      score += Math.min(kwHits * 15, 30);
+      reasons.push(`Matched ${kwHits} phishing/credential lure keyword(s)`);
+    }
+
+    const finalScore = Math.min(score, 100);
+    const verdict = finalScore >= 60 ? 'DANGEROUS' : (finalScore >= 30 ? 'SUSPICIOUS' : 'SAFE');
+
+    res.json({
+      url,
+      score: finalScore,
+      verdict,
+      reasons,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/fraud/rules
+ * Supplies latest threat intelligence rules for native module
+ */
+app.get('/api/fraud/rules', (req, res) => {
+  res.json({
+    suspiciousTlds: ['.zip', '.mov', '.top', '.xyz', '.work', '.click', '.link', '.kim', '.country', '.gq', '.cf', '.tk', '.ml'],
+    phishingKeywords: ['verify', 'login', 'account', 'update', 'banking', 'secure', 'free', 'gift', 'crypto', 'bonus', 'winner', 'wallet', 'claim', 'urgent'],
+    maxUrlLength: 80,
+    entropyThreshold: 3.8
+  });
+});
+
+/**
+ * POST /api/crypto/verify
+ * Cryptographic verification endpoint for CryptoSecurityModule.java
+ */
+app.post('/api/crypto/verify', (req, res) => {
+  try {
+    const { input, hash } = req.body || {};
+    if (!input || !hash) {
+      return res.status(400).json({ error: 'input and hash required' });
+    }
+
+    const serverHash = createHash('sha256').update(input, 'utf8').digest('hex');
+    const verified = serverHash.toLowerCase() === hash.toLowerCase();
+
+    res.json({
+      success: true,
+      verified,
+      serverHash,
+      algorithm: 'SHA-256',
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/crypto/key-exchange
+ * Public key registration for CryptoSecurityModule.java
+ */
+app.post('/api/crypto/key-exchange', (req, res) => {
+  try {
+    const { userId, clientPublicKey } = req.body || {};
+    if (!userId || !clientPublicKey) {
+      return res.status(400).json({ error: 'userId and clientPublicKey required' });
+    }
+
+    clientPublicKeys.set(userId, { clientPublicKey, registeredAt: Date.now() });
+    res.json({
+      success: true,
+      userId,
+      serverSessionToken: randomBytes(16).toString('hex'),
+      registeredAt: Date.now()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/crypto/audit
+ * Auditing endpoint for native cryptographic calculations
+ */
+app.post('/api/crypto/audit', (req, res) => {
+  try {
+    const { sample, entropy, algorithm } = req.body || {};
+    console.log(`[Crypto Audit] Sample checked: "${(sample || '').substring(0, 20)}..." | Entropy: ${entropy} | Alg: ${algorithm || 'AES/SHA256'}`);
+    res.json({ success: true, timestamp: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/sync/storage
+ * Encrypted vault backup for SecureStorageModule.java
+ */
+app.post('/api/sync/storage', (req, res) => {
+  try {
+    const { userId, vaultData } = req.body || {};
+    if (!userId || !vaultData) {
+      return res.status(400).json({ error: 'userId and vaultData required' });
+    }
+
+    mobileDeviceVaults.set(userId, {
+      vaultData,
+      updatedAt: Date.now()
+    });
+
+    res.json({
+      success: true,
+      userId,
+      syncedAt: Date.now(),
+      message: 'Vault encrypted backup successfully persisted on backend.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/sync/storage/:userId
+ * Encrypted vault restore for SecureStorageModule.java
+ */
+app.get('/api/sync/storage/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const record = mobileDeviceVaults.get(userId);
+    if (!record) {
+      return res.status(404).json({ error: 'No cloud vault found for user.' });
+    }
+    res.json({
+      success: true,
+      userId,
+      vaultData: record.vaultData,
+      updatedAt: record.updatedAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/sync/status
+ * Storage health status for SecureStorageModule.java
+ */
+app.post('/api/sync/status', (req, res) => {
+  try {
+    const { userId, itemCount } = req.body || {};
+    console.log(`[Storage Vault Status] userId=${userId} itemsStored=${itemCount}`);
+    res.json({ success: true, timestamp: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Catch-all: serve index.html for client-side routing ──
 app.use((req, res) => {
   const indexPath = join(distPath, 'index.html');

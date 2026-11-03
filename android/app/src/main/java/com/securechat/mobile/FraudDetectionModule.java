@@ -1,6 +1,7 @@
 package com.securechat.mobile;
 
 import android.content.Context;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import java.net.URI;
 import java.util.Arrays;
@@ -9,9 +10,12 @@ import java.util.List;
 /**
  * FraudDetectionModule - AI & Heuristic Link Fraud Analyzer
  * Inspects incoming message links for Shannon entropy anomalies,
- * phishing keywords, deceptive TLDs, and IP address host spoofing.
+ * phishing keywords, deceptive TLDs, and IP address host spoofing,
+ * connected directly to the SecureChat backend threat intelligence engine.
  */
 public class FraudDetectionModule {
+
+    private static final String TAG = "FraudDetectionModule";
 
     private static final List<String> SUSPICIOUS_TLDS = Arrays.asList(
         ".zip", ".mov", ".top", ".xyz", ".work", ".click", ".link", ".kim", ".country", ".gq", ".cf", ".tk", ".ml"
@@ -23,9 +27,11 @@ public class FraudDetectionModule {
     );
 
     private final Context context;
+    private final BackendApiClient apiClient;
 
     public FraudDetectionModule(Context context) {
         this.context = context;
+        this.apiClient = BackendApiClient.getInstance();
     }
 
     @JavascriptInterface
@@ -34,7 +40,8 @@ public class FraudDetectionModule {
     }
 
     /**
-     * Inspects a given URL and returns a structured risk score and percentage
+     * Inspects a given URL and returns a structured risk score and percentage,
+     * reporting flagged risks to the backend threat intelligence log.
      */
     @JavascriptInterface
     public String analyzeLink(String urlStr) {
@@ -99,9 +106,68 @@ public class FraudDetectionModule {
         }
         reasons.append("]");
 
-        return "{\"score\":" + finalScore + ",\"percentage\":" + finalScore + ",\"verdict\":\"" + verdict + "\",\"reasons\":" + reasons.toString() + "}";
+        String resultJson = "{" +
+            "\"score\":" + finalScore + "," +
+            "\"percentage\":" + finalScore + "," +
+            "\"verdict\":\"" + verdict + "\"," +
+            "\"reasons\":" + reasons.toString() +
+            "}";
+
+        // If link is suspicious or dangerous, report immediately to backend threat log
+        if (finalScore >= 30) {
+            reportFraudToBackend(urlStr, resultJson);
+        }
+
+        return resultJson;
     }
 
+    /**
+     * Dispatches native fraud threat report to backend server (/api/fraud/report)
+     */
+    @JavascriptInterface
+    public void reportFraudToBackend(final String url, final String analysisJson) {
+        try {
+            String reportPayload = "{" +
+                "\"url\":\"" + escapeJson(url) + "\"," +
+                "\"verdict\":\"" + (analysisJson.contains("DANGEROUS") ? "DANGEROUS" : "SUSPICIOUS") + "\"," +
+                "\"analysis\":" + analysisJson + "," +
+                "\"reportedBy\":\"NativeFraudDetectionModule\"," +
+                "\"timestamp\":" + System.currentTimeMillis() +
+                "}";
+
+            apiClient.post("/api/fraud/report", reportPayload, new BackendApiClient.ResponseCallback() {
+                @Override
+                public void onSuccess(String responseBody) {
+                    Log.i(TAG, "Fraud report recorded on backend server: " + responseBody);
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    Log.w(TAG, "Backend fraud report delivery warning: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to submit fraud report: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Queries backend threat intelligence database (/api/fraud/check)
+     */
+    @JavascriptInterface
+    public String checkUrlWithBackendThreatIntel(String url) {
+        try {
+            String json = "{\"url\":\"" + escapeJson(url) + "\"}";
+            return apiClient.postSync("/api/fraud/check", json);
+        } catch (Exception e) {
+            Log.e(TAG, "Backend threat intel check error: " + e.getMessage());
+            return "{\"score\":0,\"verdict\":\"SAFE\",\"source\":\"fallback\"}";
+        }
+    }
+
+    /**
+     * Shannon entropy calculator for domain randomness detection
+     */
     private double calculateEntropy(String input) {
         if (input == null || input.isEmpty()) return 0.0;
         int[] freq = new int[256];
@@ -118,5 +184,9 @@ public class FraudDetectionModule {
         }
         return Math.round(entropy * 100.0) / 100.0;
     }
-}
 
+    private String escapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+    }
+}

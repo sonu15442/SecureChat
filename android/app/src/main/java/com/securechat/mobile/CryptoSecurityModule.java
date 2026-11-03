@@ -2,30 +2,29 @@ package com.securechat.mobile;
 
 import android.content.Context;
 import android.util.Base64;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * CryptoSecurityModule - Native Hardware Security Engine
  * Provides AES-256-GCM encryption, SHA-256 cryptographic hashing,
- * and Shannon Entropy calculation for fraud link protection.
+ * Shannon Entropy calculation, and cryptographic verification connected
+ * directly to the SecureChat backend server.
  */
 public class CryptoSecurityModule {
 
     private static final String TAG = "CryptoSecurityModule";
-    private static final int GCM_IV_LENGTH = 12;
-    private static final int GCM_TAG_LENGTH = 128;
     private final Context context;
     private final SecureRandom secureRandom;
+    private final BackendApiClient apiClient;
 
     public CryptoSecurityModule(Context context) {
         this.context = context;
         this.secureRandom = new SecureRandom();
+        this.apiClient = BackendApiClient.getInstance();
     }
 
     @JavascriptInterface
@@ -71,7 +70,11 @@ public class CryptoSecurityModule {
                 entropy -= p * (Math.log(p) / Math.log(2));
             }
         }
-        return Math.round(entropy * 100.0) / 100.0;
+        double result = Math.round(entropy * 100.0) / 100.0;
+        if (result > 3.8) {
+            syncEntropyAuditToBackend(input, result);
+        }
+        return result;
     }
 
     /**
@@ -83,5 +86,72 @@ public class CryptoSecurityModule {
         secureRandom.nextBytes(bytes);
         return Base64.encodeToString(bytes, Base64.NO_WRAP);
     }
-}
 
+    /**
+     * Cryptographic verification with Backend:
+     * Dispatches native verification request to /api/crypto/verify
+     */
+    @JavascriptInterface
+    public void verifyWithBackend(String payload, String clientHash) {
+        try {
+            String json = "{" +
+                "\"input\":\"" + escapeJson(payload) + "\"," +
+                "\"hash\":\"" + clientHash + "\"" +
+                "}";
+
+            apiClient.post("/api/crypto/verify", json, new BackendApiClient.ResponseCallback() {
+                @Override
+                public void onSuccess(String responseBody) {
+                    Log.i(TAG, "Backend cryptographic attestation verified: " + responseBody);
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    Log.e(TAG, "Backend cryptographic verification failed: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Error initiating backend crypto verify: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Public key registration and session key exchange with backend
+     */
+    @JavascriptInterface
+    public String requestBackendKeyExchange(String userId, String clientPublicKey) {
+        try {
+            String json = "{" +
+                "\"userId\":\"" + escapeJson(userId) + "\"," +
+                "\"clientPublicKey\":\"" + escapeJson(clientPublicKey) + "\"," +
+                "\"algorithm\":\"ECDH-P256\"" +
+                "}";
+            return apiClient.postSync("/api/crypto/key-exchange", json);
+        } catch (Exception e) {
+            Log.e(TAG, "Key exchange with backend failed: " + e.getMessage());
+            return "{\"success\":false,\"error\":\"" + escapeJson(e.getMessage()) + "\"}";
+        }
+    }
+
+    /**
+     * Reports anomalous entropy measurements to backend threat audit log
+     */
+    @JavascriptInterface
+    public void syncEntropyAuditToBackend(String sample, double score) {
+        try {
+            String snippet = sample.length() > 50 ? sample.substring(0, 50) : sample;
+            String json = "{" +
+                "\"sample\":\"" + escapeJson(snippet) + "\"," +
+                "\"entropy\":" + score + "," +
+                "\"algorithm\":\"ShannonEntropy\"," +
+                "\"timestamp\":" + System.currentTimeMillis() +
+                "}";
+            apiClient.post("/api/crypto/audit", json, null);
+        } catch (Exception ignored) {}
+    }
+
+    private String escapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+    }
+}

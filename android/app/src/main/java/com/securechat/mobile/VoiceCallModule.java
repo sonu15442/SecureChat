@@ -1,11 +1,11 @@
 package com.securechat.mobile;
 
 import android.content.Context;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
-import android.media.AudioDeviceInfo;
 import android.os.Build;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
@@ -14,13 +14,15 @@ import java.util.List;
 /**
  * VoiceCallModule - Native Voice Calling & Loudspeaker Routing Engine
  * Ensures two-way microphone acquisition and high-clarity loudspeaker audio
- * across all Android versions (including Android 12, 13, 14, 15, and 16).
+ * across all Android versions (including Android 12, 13, 14, 15, and 16),
+ * connected directly to the SecureChat backend server.
  */
 public class VoiceCallModule {
 
     private static final String TAG = "VoiceCallModule";
     private final Context context;
     private final AudioManager audioManager;
+    private final BackendApiClient apiClient;
     private boolean isCallActive = false;
     private boolean isMuted = false;
     private boolean isSpeakerphoneOn = true;
@@ -28,6 +30,7 @@ public class VoiceCallModule {
     public VoiceCallModule(Context context) {
         this.context = context;
         this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        this.apiClient = BackendApiClient.getInstance();
     }
 
     @JavascriptInterface
@@ -63,6 +66,9 @@ public class VoiceCallModule {
                 isCallActive = true;
                 isMuted = false;
                 Log.i(TAG, "Native Voice Call Started: Mode=MODE_IN_COMMUNICATION, Loudspeaker=ON, Volume=Audible");
+
+                // Transmit acoustic telemetry to backend
+                reportAudioQualityToBackend("active_session", "{\"sampleRate\":44100,\"speaker\":true,\"volume\":85}");
                 return true;
             }
         } catch (Exception e) {
@@ -88,6 +94,8 @@ public class VoiceCallModule {
                 isCallActive = false;
                 isSpeakerphoneOn = false;
                 Log.i(TAG, "Native Voice Call Ended: Restored to MODE_NORMAL");
+
+                reportAudioQualityToBackend("active_session", "{\"callEnded\":true,\"mode\":\"MODE_NORMAL\"}");
                 return true;
             }
         } catch (Exception e) {
@@ -191,5 +199,58 @@ public class VoiceCallModule {
     public boolean isMuted() {
         return isMuted;
     }
-}
 
+    /**
+     * Relays native voice signaling states directly to backend server (/api/call/signal)
+     */
+    @JavascriptInterface
+    public void syncVoiceCallStateToBackend(final String callId, final String targetUserId, final String state) {
+        try {
+            String payload = "{" +
+                "\"type\":\"" + escapeJson(state) + "\"," +
+                "\"callId\":\"" + escapeJson(callId) + "\"," +
+                "\"targetId\":\"" + escapeJson(targetUserId) + "\"," +
+                "\"isVideo\":false," +
+                "\"speakerphone\":" + isSpeakerphoneOn + "," +
+                "\"timestamp\":" + System.currentTimeMillis() +
+                "}";
+
+            apiClient.post("/api/call/signal", payload, new BackendApiClient.ResponseCallback() {
+                @Override
+                public void onSuccess(String responseBody) {
+                    Log.i(TAG, "Voice call signal synced with backend: " + responseBody);
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    Log.w(TAG, "Voice call signal backend sync warning: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to sync voice call state: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Reports hardware audio telemetry (loudspeaker, mode, sample rate) to /api/call/audio-telemetry
+     */
+    @JavascriptInterface
+    public void reportAudioQualityToBackend(final String callId, final String qualityReportJson) {
+        try {
+            String payload = "{" +
+                "\"callId\":\"" + escapeJson(callId) + "\"," +
+                "\"isSpeakerphoneOn\":" + isSpeakerphoneOn + "," +
+                "\"isMuted\":" + isMuted + "," +
+                "\"sampleRate\":44100," +
+                "\"details\":" + (qualityReportJson != null ? qualityReportJson : "{}") + "," +
+                "\"timestamp\":" + System.currentTimeMillis() +
+                "}";
+            apiClient.post("/api/call/audio-telemetry", payload, null);
+        } catch (Exception ignored) {}
+    }
+
+    private String escapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+    }
+}

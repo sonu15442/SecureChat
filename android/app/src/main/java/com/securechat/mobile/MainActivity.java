@@ -1,12 +1,15 @@
 package com.securechat.mobile;
 
 import android.os.Bundle;
+import android.os.BatteryManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ClipData;
 import android.content.ActivityNotFoundException;
 import android.net.Uri;
 import android.media.AudioManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -22,13 +25,14 @@ import android.graphics.Color;
 import android.view.Window;
 import android.view.WindowManager;
 import android.util.Log;
+import android.os.Build;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * MainActivity - SecureChat React Native & Native Android Bridge Activity
  * Manages full-screen dark cyber interface, WebRTC hardware permissions,
- * and native bridge modules for calling, cryptography, storage, and file choosing.
+ * and exposes all native modules connected directly to the SecureChat backend server.
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -37,6 +41,7 @@ public class MainActivity extends AppCompatActivity {
     private WebView webView;
     private AudioManager audioManager;
     private SecureChatPackage nativePackage;
+    private BackendApiClient apiClient;
     private ValueCallback<Uri[]> mFilePathCallback;
 
     @Override
@@ -57,10 +62,14 @@ public class MainActivity extends AppCompatActivity {
             audioManager.setMicrophoneMute(false);
         }
 
-        // 3. Initialize React Native package registry
+        // 3. Initialize React Native package registry and backend client
         nativePackage = new SecureChatPackage(this);
+        apiClient = BackendApiClient.getInstance();
 
-        // 4. Request hardware runtime permissions (Audio recording, Camera, Audio settings)
+        // 4. Send device activity status to backend server
+        sendActivityStatusToBackend("RESUMED");
+
+        // 5. Request hardware runtime permissions (Audio recording, Camera, Audio settings)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.MODIFY_AUDIO_SETTINGS) != PackageManager.PERMISSION_GRANTED) {
@@ -71,7 +80,7 @@ public class MainActivity extends AppCompatActivity {
             }, 101);
         }
 
-        // 5. Initialize WebView with native bridge bindings
+        // 6. Initialize WebView with native bridge bindings
         webView = new WebView(this);
         setContentView(webView);
 
@@ -90,12 +99,14 @@ public class MainActivity extends AppCompatActivity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-        // Expose Native React Modules directly to JavaScript
+        // Expose Native Modules directly to JavaScript
         webView.addJavascriptInterface(nativePackage.getVoiceCallModule(), "NativeVoiceCall");
+        webView.addJavascriptInterface(nativePackage.getVideoCallModule(), "NativeVideoCall");
         webView.addJavascriptInterface(nativePackage.getCryptoSecurityModule(), "NativeCrypto");
         webView.addJavascriptInterface(nativePackage.getSecureStorageModule(), "NativeStorage");
         webView.addJavascriptInterface(nativePackage.getFraudDetectionModule(), "NativeFraudDetection");
         webView.addJavascriptInterface(nativePackage.getWebRTCManager(), "NativeWebRTC");
+        webView.addJavascriptInterface(this, "NativeMainActivity");
 
         // Custom WebChromeClient for WebRTC Audio/Video capture and Native File Choosing
         webView.setWebChromeClient(new WebChromeClient() {
@@ -165,6 +176,52 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl("file:///android_asset/public/index.html");
     }
 
+    @JavascriptInterface
+    public String checkBackendConnection() {
+        try {
+            return apiClient.getBaseUrl();
+        } catch (Exception e) {
+            return "OFFLINE";
+        }
+    }
+
+    @JavascriptInterface
+    public void reportDeviceTelemetry(String stateJson) {
+        sendActivityStatusToBackend(stateJson != null ? stateJson : "ACTIVE");
+    }
+
+    private void sendActivityStatusToBackend(String status) {
+        try {
+            int batteryLevel = getBatteryLevel();
+            String deviceModel = Build.MANUFACTURER + " " + Build.MODEL;
+            String payload = "{" +
+                "\"deviceModel\":\"" + deviceModel + "\"," +
+                "\"osVersion\":\"" + Build.VERSION.SDK_INT + "\"," +
+                "\"appVersion\":\"1.0.0\"," +
+                "\"status\":\"" + status + "\"," +
+                "\"batteryLevel\":" + batteryLevel + "," +
+                "\"networkType\":\"WIFI\"," +
+                "\"timestamp\":" + System.currentTimeMillis() +
+                "}";
+
+            apiClient.post("/api/device/status", payload, null);
+        } catch (Exception ignored) {}
+    }
+
+    private int getBatteryLevel() {
+        try {
+            Intent batteryIntent = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (batteryIntent != null) {
+                int level = batteryIntent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = batteryIntent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                if (level >= 0 && scale > 0) {
+                    return (int) ((level / (float) scale) * 100);
+                }
+            }
+        } catch (Exception ignored) {}
+        return 100;
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -198,6 +255,13 @@ public class MainActivity extends AppCompatActivity {
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             audioManager.setSpeakerphoneOn(true);
         }
+        sendActivityStatusToBackend("RESUMED");
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        sendActivityStatusToBackend("PAUSED");
     }
 
     @Override
