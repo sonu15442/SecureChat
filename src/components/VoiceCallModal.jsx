@@ -17,9 +17,18 @@ const RTC_CONFIG = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
+    { urls: 'stun:stun4.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelay',
+      credential: 'openrelay'
+    }
   ],
-  iceCandidatePoolSize: 10
+  iceCandidatePoolSize: 5
 };
 
 export default function VoiceCallModal({
@@ -33,6 +42,7 @@ export default function VoiceCallModal({
   const isCaller = !!call?.isCaller;
   const rawTarget = isCaller ? (call?.recipient || {}) : (call?.caller || {});
   const targetUser = (allUsers && Array.isArray(allUsers) ? allUsers.find(u => u.id === rawTarget.id) : null) || rawTarget;
+  const resolvedTargetId = targetUser?.id || rawTarget?.id || (isCaller ? (call?.recipient?.id || call?.recipientId) : (call?.caller?.id || call?.callerId));
   const [callStatus, setCallStatus] = useState(call?.status || (isCaller ? 'ringing' : 'connected'));
   
   const [isMuted, setIsMuted] = useState(false);
@@ -218,9 +228,29 @@ export default function VoiceCallModal({
           }
         };
 
-        // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
+        // Forward ICE candidates to peer with smooth batching to prevent network socket congestion
+        let candTimeout = null;
+        const queuedCandidates = [];
+
+        const flushCandidates = () => {
+          if (queuedCandidates.length === 0) return;
+          const toSend = [...queuedCandidates];
+          queuedCandidates.length = 0;
+          toSend.forEach(candObj => {
+            if (onSendSignal) {
+              onSendSignal({
+                type: 'ice_candidate',
+                candidate: candObj,
+                callId: call.callId,
+                recipientId: resolvedTargetId,
+                targetId: resolvedTargetId
+              });
+            }
+          });
+        };
+
         pc.onicecandidate = (event) => {
-          if (event.candidate && onSendSignal) {
+          if (event.candidate) {
             const cand = event.candidate;
             const candObj = cand.toJSON ? cand.toJSON() : {
               candidate: cand.candidate,
@@ -228,12 +258,9 @@ export default function VoiceCallModal({
               sdpMLineIndex: cand.sdpMLineIndex,
               usernameFragment: cand.usernameFragment
             };
-            onSendSignal({
-              type: 'ice_candidate',
-              candidate: candObj,
-              callId: call.callId,
-              targetId: targetUser?.id
-            });
+            queuedCandidates.push(candObj);
+            if (candTimeout) clearTimeout(candTimeout);
+            candTimeout = setTimeout(flushCandidates, 60);
           }
         };
 
@@ -639,8 +666,26 @@ export default function VoiceCallModal({
     mult => Math.max(10, (isMuted ? 0 : activeLevel) * mult * 80)
   );
 
+  const handleUserInteraction = () => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = 1.0;
+      remoteAudioRef.current.play().catch(() => {});
+    }
+    if (window.__activeCallAudio) {
+      window.__activeCallAudio.play().catch(() => {});
+    }
+    if (remoteAudioCtxRef.current && remoteAudioCtxRef.current.state === 'suspended') {
+      remoteAudioCtxRef.current.resume().catch(() => {});
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none">
+    <div
+      onClick={handleUserInteraction}
+      onTouchStart={handleUserInteraction}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-2xl animate-fade-in select-none"
+    >
       {/* Remote Audio Output Element for Web & Mobile voice clarity (Kept in-DOM for reliable WebView audio delivery) */}
       <audio
         ref={remoteAudioRef}

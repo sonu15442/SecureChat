@@ -17,9 +17,18 @@ const RTC_CONFIG = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
+    { urls: 'stun:stun4.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelay',
+      credential: 'openrelay'
+    }
   ],
-  iceCandidatePoolSize: 10
+  iceCandidatePoolSize: 5
 };
 
 export default function VideoCallModal({
@@ -33,6 +42,7 @@ export default function VideoCallModal({
   const isCaller = !!call?.isCaller;
   const rawTarget = isCaller ? (call?.recipient || {}) : (call?.caller || {});
   const targetUser = (allUsers && Array.isArray(allUsers) ? allUsers.find(u => u.id === rawTarget.id) : null) || rawTarget;
+  const resolvedTargetId = targetUser?.id || rawTarget?.id || (isCaller ? (call?.recipient?.id || call?.recipientId) : (call?.caller?.id || call?.callerId));
   const [callStatus, setCallStatus] = useState(call?.status || (isCaller ? 'ringing' : 'connected'));
 
   const [isMuted, setIsMuted] = useState(false);
@@ -262,9 +272,29 @@ export default function VideoCallModal({
           } catch {}
         };
 
-        // Forward ICE candidates to peer (serialized as plain JSON so Structured Clone never fails)
+        // Forward ICE candidates to peer with smooth batching
+        let candTimeout = null;
+        const queuedCandidates = [];
+
+        const flushCandidates = () => {
+          if (queuedCandidates.length === 0) return;
+          const toSend = [...queuedCandidates];
+          queuedCandidates.length = 0;
+          toSend.forEach(candObj => {
+            if (onSendSignal) {
+              onSendSignal({
+                type: 'ice_candidate',
+                candidate: candObj,
+                callId: call.callId,
+                recipientId: resolvedTargetId,
+                targetId: resolvedTargetId
+              });
+            }
+          });
+        };
+
         pc.onicecandidate = (event) => {
-          if (event.candidate && onSendSignal) {
+          if (event.candidate) {
             const cand = event.candidate;
             const candObj = cand.toJSON ? cand.toJSON() : {
               candidate: cand.candidate,
@@ -272,12 +302,9 @@ export default function VideoCallModal({
               sdpMLineIndex: cand.sdpMLineIndex,
               usernameFragment: cand.usernameFragment
             };
-            onSendSignal({
-              type: 'ice_candidate',
-              candidate: candObj,
-              callId: call.callId,
-              targetId: targetUser?.id
-            });
+            queuedCandidates.push(candObj);
+            if (candTimeout) clearTimeout(candTimeout);
+            candTimeout = setTimeout(flushCandidates, 60);
           }
         };
 
