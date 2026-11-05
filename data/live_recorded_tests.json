@@ -1,131 +1,5 @@
 [
   {
-    "id": "test_1793021862693_oa1b",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Mobile",
-    "duration": 0.1,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:42.693Z"
-  },
-  {
-    "id": "test_1793021867112_2iyk",
-    "category": "CRUD Operations",
-    "name": "Selenium Website: User sends end-to-end encrypted message",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:47.112Z"
-  },
-  {
-    "id": "test_1793021877154_u20u",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Chats rail tab",
-    "duration": 0.14,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:57.154Z"
-  },
-  {
-    "id": "test_1793021878754_g4zq",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Mobile",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:37:58.754Z"
-  },
-  {
-    "id": "test_1793021884771_oh3w",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Mobile",
-    "duration": 0.06,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:38:04.771Z"
-  },
-  {
-    "id": "test_1793021888827_wp0n",
-    "category": "CRUD Operations",
-    "name": "Selenium Website: User sends end-to-end encrypted message",
-    "duration": 0.08,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:38:08.827Z"
-  },
-  {
-    "id": "test_1793021927978_fixz",
-    "category": "CRUD Operations",
-    "name": "Selenium Website: User sends end-to-end encrypted message",
-    "duration": 0.1,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:38:47.978Z"
-  },
-  {
-    "id": "test_1793022025588_xqk1",
-    "category": "Navigation",
-    "name": "Selenium Website: User opens conversation with Sonu Mobile",
-    "duration": 0.12,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:40:25.588Z"
-  },
-  {
-    "id": "test_1793022227257_o2r0",
-    "category": "Navigation",
-    "name": "Selenium Website: User switches to Moments rail tab",
-    "duration": 0.14,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:43:47.257Z"
-  },
-  {
-    "id": "test_1793022232969_njbu",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:43:52.969Z"
-  },
-  {
-    "id": "test_1793022235364_7524",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:43:55.364Z"
-  },
-  {
-    "id": "test_1793022239282_z1n3",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:43:59.282Z"
-  },
-  {
-    "id": "test_1793022243648_3d9b",
-    "category": "Moments Management",
-    "name": "Selenium Website: User views contact Moment story",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-26T13:44:03.648Z"
-  },
-  {
-    "id": "test_1793278445435_0kl2",
-    "category": "Session Management",
-    "name": "Selenium Website: User accepts incoming call",
-    "duration": 0.04,
-    "status": "PASSED",
-    "source": "SecureChat",
-    "timestamp": "2026-10-29T12:54:05.435Z"
-  },
-  {
     "id": "test_1793278458030_eqsf",
     "category": "Session Management",
     "name": "Selenium Website: User mutes microphone",
@@ -1798,5 +1672,131 @@
     "status": "PASSED",
     "source": "SecureChat",
     "timestamp": "2026-11-03T18:05:29.766Z"
+  },
+  {
+    "id": "test_1793731338579_5we8",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T18:42:18.579Z"
+  },
+  {
+    "id": "test_1793731350263_x004",
+    "category": "Input Validation",
+    "name": "Selenium Website: Security scanner flags link and opens safety advisory",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-03T18:42:30.263Z"
+  },
+  {
+    "id": "test_1793785921701_zzpk",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T09:52:01.701Z"
+  },
+  {
+    "id": "test_1793785926880_njyk",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Global Chat",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T09:52:06.880Z"
+  },
+  {
+    "id": "test_1793786214747_srvq",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Web",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T09:56:54.747Z"
+  },
+  {
+    "id": "test_1793786227818_1a85",
+    "category": "Input Validation",
+    "name": "Selenium Website: Security scanner flags link and opens safety advisory",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T09:57:07.818Z"
+  },
+  {
+    "id": "test_1793786690287_ulha",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Web",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:04:50.288Z"
+  },
+  {
+    "id": "test_1793786693661_omqv",
+    "category": "CRUD Operations",
+    "name": "Selenium Website: User sends end-to-end encrypted message",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:04:53.661Z"
+  },
+  {
+    "id": "test_1793786696160_klg1",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.08,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:04:56.160Z"
+  },
+  {
+    "id": "test_1793786698902_nsjs",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Global Chat",
+    "duration": 0.1,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:04:58.902Z"
+  },
+  {
+    "id": "test_1793786701384_r66o",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Sonu Mobile",
+    "duration": 0.12,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:05:01.384Z"
+  },
+  {
+    "id": "test_1793787392475_q9xq",
+    "category": "Input Validation",
+    "name": "Selenium Website: Security scanner flags link and opens safety advisory",
+    "duration": 0.14,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:16:32.476Z"
+  },
+  {
+    "id": "test_1793789071128_hg7n",
+    "category": "Navigation",
+    "name": "Selenium Website: User opens conversation with Global Chat",
+    "duration": 0.04,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:44:31.128Z"
+  },
+  {
+    "id": "test_1793789181029_orkb",
+    "category": "Input Validation",
+    "name": "Selenium Website: Security scanner flags link and opens safety advisory",
+    "duration": 0.06,
+    "status": "PASSED",
+    "source": "SecureChat",
+    "timestamp": "2026-11-04T10:46:21.029Z"
   }
 ]
